@@ -1,4 +1,6 @@
-## 本模组为 针对在游玩沃玛岛服务器www.warma.fans/mc中遇到的各类问题提供的修复模组(面向 Minecraft 26.2 Fabric 客户端)
+# warmaislandfix
+
+针对 [沃玛岛服务器](https://www.warma.fans/mc) 游玩过程中遇到的各类问题提供客户端修复（面向 Minecraft 26.2 Fabric 客户端）。
 
 未触发问题时尽量保持原模组和原版行为。
 
@@ -16,6 +18,11 @@
 所有第三方模组兼容项都是可选的；未安装对应模组时不会形成运行时依赖。
 
 ## 安装
+
+下载：
+
+- [下载 warmaislandfix-1.7.2.jar](https://github.com/EBG-bg/warmaislandfix/releases/download/v1.7.2/warmaislandfix-1.7.2.jar)
+- [查看 v1.7.2 发布页](https://github.com/EBG-bg/warmaislandfix/releases/tag/v1.7.2)
 
 1. 安装 Minecraft 26.2、Fabric Loader 和 Fabric API。
 2. 将发布的 `warmaislandfix-1.7.2.jar` 放入客户端 `mods` 目录。
