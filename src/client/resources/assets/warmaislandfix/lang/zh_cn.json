@@ -1,0 +1,8 @@
+{
+  "error.warmaislandfix.rei_transfer.unavailable": "当前容器暂时无法执行客户端配方摆放",
+  "error.warmaislandfix.rei_transfer.unsupported": "当前容器的槽位结构不支持客户端配方摆放",
+  "error.warmaislandfix.rei_transfer.cursor": "请先为鼠标指针上的物品腾出背包空间",
+  "error.warmaislandfix.rei_transfer.inventory_full": "背包空间不足，无法清空配方输入槽",
+  "error.warmaislandfix.rei_transfer.rejected": "服务器拒绝了部分容器操作，请重新打开容器后再试",
+  "error.warmaislandfix.rei_transfer.failed": "客户端配方摆放失败，物品已尽量保留在背包中"
+}

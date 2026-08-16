@@ -1,0 +1,54 @@
+{
+    "schemaVersion":  1,
+    "id":  "warmaislandfix",
+    "version":  "${version}",
+    "name":  "warmaislandfix",
+    "description":  "Fixes client shutdown hangs, ALI/JEI freezes, Chat Patches codec errors, waypoint disconnects, Axiom Chinese font-atlas failures, REI transfers on plugin servers, and consumable use while rowing boats.",
+    "authors":  [
+                    "Codex"
+                ],
+    "license":  "CC0-1.0",
+    "environment":  "client",
+    "entrypoints":  {
+                        "client":  [
+                                       "dev.codex.warmaislandfix.WarmaIslandFixClient"
+                                   ]
+                    },
+    "mixins":  [
+                   {
+                       "config":  "warmaislandfix.client.mixins.json",
+                       "environment":  "client"
+                   },
+                   {
+                       "config":  "warmaislandfix.ali_compat.client.mixins.json",
+                       "environment":  "client"
+                   },
+                   {
+                       "config":  "warmaislandfix.chatpatches_compat.client.mixins.json",
+                       "environment":  "client"
+                   },
+                   {
+                       "config":  "warmaislandfix.axiom_compat.client.mixins.json",
+                       "environment":  "client"
+                   },
+                   {
+                       "config":  "warmaislandfix.rei_compat.client.mixins.json",
+                       "environment":  "client"
+                   }
+               ],
+    "depends":  {
+                    "fabricloader":  "\u003e=0.19.3",
+                    "minecraft":  "26.2",
+                    "java":  "\u003e=25",
+                    "fabric-api":  "*"
+                },
+    "suggests":  {
+                     "ali":  "*",
+                     "leawind_third_person":  "*",
+                     "tabtps-fabric":  "*",
+                     "patpat":  "*",
+                     "chatpatches":  "*",
+                     "axiom":  "5.5.0",
+                     "roughlyenoughitems":  "26.2.820"
+                 }
+}

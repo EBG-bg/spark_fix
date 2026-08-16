@@ -1,0 +1,12 @@
+{
+  "required": false,
+  "package": "dev.codex.warmaislandfix.mixin.client",
+  "compatibilityLevel": "JAVA_25",
+  "client": [
+    "AxiomEditorUIFontMixin",
+    "AxiomImAssertCallbackMixin"
+  ],
+  "injectors": {
+    "defaultRequire": 0
+  }
+}

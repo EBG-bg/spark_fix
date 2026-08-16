@@ -1,0 +1,8 @@
+{
+  "error.warmaislandfix.rei_transfer.unavailable": "Client-side recipe transfer is unavailable for this container",
+  "error.warmaislandfix.rei_transfer.unsupported": "This container layout does not support client-side recipe transfer",
+  "error.warmaislandfix.rei_transfer.cursor": "Make inventory room for the item carried by the cursor first",
+  "error.warmaislandfix.rei_transfer.inventory_full": "There is not enough inventory room to clear the recipe inputs",
+  "error.warmaislandfix.rei_transfer.rejected": "The server rejected part of the container operation; reopen the container and try again",
+  "error.warmaislandfix.rei_transfer.failed": "Client-side recipe transfer failed; items were kept in the inventory where possible"
+}

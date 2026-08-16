@@ -1,0 +1,11 @@
+{
+  "required": false,
+  "package": "dev.codex.warmaislandfix.mixin.client",
+  "compatibilityLevel": "JAVA_25",
+  "client": [
+    "ReiClientTransferMixin"
+  ],
+  "injectors": {
+    "defaultRequire": 0
+  }
+}
