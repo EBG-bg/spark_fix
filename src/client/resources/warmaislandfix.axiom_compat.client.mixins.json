@@ -4,7 +4,8 @@
   "compatibilityLevel": "JAVA_25",
   "client": [
     "AxiomEditorUIFontMixin",
-    "AxiomImAssertCallbackMixin"
+    "AxiomImAssertCallbackMixin",
+    "AxiomLiteralTextMixin"
   ],
   "injectors": {
     "defaultRequire": 0

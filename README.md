@@ -12,6 +12,8 @@
 - 修复 Chat Patches 记录富文本物品组件时的 `HolderSetCodec` 编码失败，并保留完整记录。
 - 接收服务端孤立的路径点 UPDATE 时，将其作为首次 TRACK 保存，避免 `ClientWaypointManager` 空指针断连。
 - 仅在 Axiom 中文字体图集构建失败时使用受限字体回退，并在游戏内显示一次恢复提示。
+- 补充 Axiom 对称工具提示和剪贴板选项的简体中文显示，不改变英文界面。
+- 补充 Axiom 剪贴板工具中“复制空气”“复制实体”“保留现有”等硬编码选项的简体中文显示。
 - 在不支持 REI 移动物品数据包的插件服上，使用原版容器点击恢复一键配方摆放。
 - 为 REI 一键摆放提供单次点击上限（默认 576），并在 Mod Menu 中配置。
 - Axiom 字体回退默认使用常见中文字形；可在 Mod Menu 中选择遍历当前语言的全部翻译文本。
@@ -23,11 +25,11 @@
 
 下载：
 
-- [下载 warmaislandfix-1.7.3.jar](https://github.com/EBG-bg/warmaislandfix/releases/download/v1.7.3/warmaislandfix-1.7.3.jar)
-- [查看 v1.7.3 发布页](https://github.com/EBG-bg/warmaislandfix/releases/tag/v1.7.3)
+- [下载 warmaislandfix-1.7.4.jar](https://github.com/EBG-bg/warmaislandfix/releases/download/v1.7.4/warmaislandfix-1.7.4.jar)
+- [查看 v1.7.4 发布页](https://github.com/EBG-bg/warmaislandfix/releases/tag/v1.7.4)
 
 1. 安装 Minecraft 26.2、Fabric Loader 和 Fabric API。
-2. 将发布的 `warmaislandfix-1.7.3.jar` 放入客户端 `mods` 目录。
+2. 将发布的 `warmaislandfix-1.7.4.jar` 放入客户端 `mods` 目录。
 3. 不要安装调试构建，也不需要在服务器安装本模组。
 
 ## 配置

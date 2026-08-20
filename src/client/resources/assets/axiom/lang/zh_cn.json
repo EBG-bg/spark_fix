@@ -1,0 +1,13 @@
+{
+  "axiom.buildertool.setup_symmetry.move_symmetry": "移动对称工具",
+  "axiom.buildertool.setup_symmetry.nudge_symmetry": "微调对称",
+  "axiom.buildertool.setup_symmetry.ctrl_nudge_symmetry": "[CTRL] 微调对称",
+  "axiom.buildertool.setup_symmetry.cmd_nudge_symmetry": "[CMD] 微调对称",
+  "axiom.config.builder_tools.middle_click": "鼠标中键",
+  "axiom.config.builder_tools.middle_click.extend_select": "扩展选择",
+  "axiom.config.builder_tools.middle_click.magic_select": "魔法选择",
+  "axiom.editorui.window.clipboard.placement_options": "放置选项",
+  "axiom.editorui.window.clipboard.placement_options.keep_existing": "保留现有",
+  "axiom.editorui.window.clipboard.placement_options.paste_air": "粘贴空气",
+  "axiom.editorui.window.clipboard.placement_options.rotate_scale": "旋转/缩放..."
+}

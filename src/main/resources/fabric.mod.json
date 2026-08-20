@@ -3,7 +3,7 @@
     "id":  "warmaislandfix",
     "version":  "${version}",
     "name":  "warmaislandfix",
-    "description":  "Fixes client shutdown hangs, ALI/JEI freezes, Chat Patches codec errors, waypoint disconnects, Axiom Chinese font-atlas failures, REI transfers on plugin servers, and consumable use while rowing boats.",
+    "description":  "Fixes client shutdown hangs, ALI/JEI freezes, Chat Patches codec errors, waypoint disconnects, Axiom Chinese UI/font failures, REI transfers on plugin servers, and consumable use while rowing boats.",
     "authors":  [
                     "Codex"
                 ],

@@ -4,6 +4,7 @@ import net.minecraft.client.gui.GuiGraphicsExtractor;
 import net.minecraft.client.gui.components.Button;
 import net.minecraft.client.gui.components.CycleButton;
 import net.minecraft.client.gui.components.EditBox;
+import net.minecraft.client.gui.components.StringWidget;
 import net.minecraft.client.gui.screens.Screen;
 import net.minecraft.network.chat.Component;
 
@@ -23,6 +24,15 @@ final class WarmaIslandFixConfigScreen extends Screen {
     protected void init() {
         int center = this.width / 2;
         int top = Math.max(42, this.height / 2 - 54);
+
+        this.addRenderableWidget(new StringWidget(
+            center - 100,
+            top + 2,
+            200,
+            14,
+            Component.translatable("config.warmaislandfix.rei_max_clicks"),
+            this.font
+        ));
 
         this.maxClicksField = this.addRenderableWidget(new EditBox(
             this.font,
@@ -69,16 +79,9 @@ final class WarmaIslandFixConfigScreen extends Screen {
         int mouseY,
         float partialTick
     ) {
-        this.extractMenuBackground(graphics);
-        graphics.centeredText(this.font, this.title, this.width / 2, 20, 0xFFFFFF);
-        graphics.text(
-            this.font,
-            Component.translatable("config.warmaislandfix.rei_max_clicks"),
-            this.maxClicksField.getX(),
-            this.maxClicksField.getY() - 12,
-            0xFFFFFF
-        );
+        // Extract widgets first so the custom screen title is layered above them.
         super.extractRenderState(graphics, mouseX, mouseY, partialTick);
+        graphics.centeredText(this.font, this.title, this.width / 2, 20, 0xFFFFFF);
     }
 
     private void saveAndClose() {
