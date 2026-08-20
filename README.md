@@ -13,6 +13,8 @@
 - 接收服务端孤立的路径点 UPDATE 时，将其作为首次 TRACK 保存，避免 `ClientWaypointManager` 空指针断连。
 - 仅在 Axiom 中文字体图集构建失败时使用受限字体回退，并在游戏内显示一次恢复提示。
 - 在不支持 REI 移动物品数据包的插件服上，使用原版容器点击恢复一键配方摆放。
+- 为 REI 一键摆放提供单次点击上限（默认 576），并在 Mod Menu 中配置。
+- Axiom 字体回退默认使用常见中文字形；可在 Mod Menu 中选择遍历当前语言的全部翻译文本。
 - 允许玩家划船时开始食用物品，并清除下船后可能残留的双手忙碌状态。
 
 所有第三方模组兼容项都是可选的；未安装对应模组时不会形成运行时依赖。
@@ -21,12 +23,21 @@
 
 下载：
 
-- [下载 warmaislandfix-1.7.2.jar](https://github.com/EBG-bg/warmaislandfix/releases/download/v1.7.2/warmaislandfix-1.7.2.jar)
-- [查看 v1.7.2 发布页](https://github.com/EBG-bg/warmaislandfix/releases/tag/v1.7.2)
+- [下载 warmaislandfix-1.7.3.jar](https://github.com/EBG-bg/warmaislandfix/releases/download/v1.7.3/warmaislandfix-1.7.3.jar)
+- [查看 v1.7.3 发布页](https://github.com/EBG-bg/warmaislandfix/releases/tag/v1.7.3)
 
 1. 安装 Minecraft 26.2、Fabric Loader 和 Fabric API。
-2. 将发布的 `warmaislandfix-1.7.2.jar` 放入客户端 `mods` 目录。
+2. 将发布的 `warmaislandfix-1.7.3.jar` 放入客户端 `mods` 目录。
 3. 不要安装调试构建，也不需要在服务器安装本模组。
+
+## 配置
+
+安装 Mod Menu 后，可在模组列表中打开设置页面：
+
+- `REI 单次摆放最大点击次数`：范围为 1 到 4096，默认 576。
+- `Axiom：遍历当前语言全部翻译文件`：默认关闭；开启后只影响字体回退时的字形收集。
+
+配置也会保存到 `config/warmaislandfix.properties`。修改后重新打开相关界面即可生效；REI 点击上限对下一次摆放生效，Axiom 字形选项对下一次字体图集回退生效。
 
 ## 构建
 
@@ -42,7 +53,7 @@ Windows PowerShell 或命令提示符可运行：
 .\gradlew.bat build
 ```
 
-构建结果位于 `build/libs/`。Axiom 与 REI 仅作为 `compileOnly` 依赖从公开 Maven 仓库获取，不会打包进成品 JAR。
+构建结果位于 `build/libs/`。Axiom、REI 与 Mod Menu 仅作为 `compileOnly` 依赖从公开 Maven 仓库获取，不会打包进成品 JAR。
 
 ## 报告问题
 

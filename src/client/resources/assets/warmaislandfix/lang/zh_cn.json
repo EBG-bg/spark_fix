@@ -4,5 +4,14 @@
   "error.warmaislandfix.rei_transfer.cursor": "请先为鼠标指针上的物品腾出背包空间",
   "error.warmaislandfix.rei_transfer.inventory_full": "背包空间不足，无法清空配方输入槽",
   "error.warmaislandfix.rei_transfer.rejected": "服务器拒绝了部分容器操作，请重新打开容器后再试",
-  "error.warmaislandfix.rei_transfer.failed": "客户端配方摆放失败，物品已尽量保留在背包中"
+  "error.warmaislandfix.rei_transfer.failed": "客户端配方摆放失败，物品已尽量保留在背包中",
+  "error.warmaislandfix.rei_transfer.limit": "REI 摆放达到点击上限（%s），已安全停止",
+  "error.warmaislandfix.rei_transfer.menu_changed": "摆放过程中打开的容器发生了变化",
+  "error.warmaislandfix.rei_transfer.overlap": "当前容器将同一槽位同时作为输入槽和背包槽",
+  "config.warmaislandfix.title": "warmaislandfix 设置",
+  "config.warmaislandfix.rei_max_clicks": "REI 单次摆放最大点击次数",
+  "config.warmaislandfix.axiom_scan_all_translations": "Axiom：遍历当前语言全部翻译文件",
+  "config.warmaislandfix.on": "开启",
+  "config.warmaislandfix.off": "关闭",
+  "config.warmaislandfix.done": "完成"
 }

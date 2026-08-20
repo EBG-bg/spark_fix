@@ -101,7 +101,9 @@ public final class AxiomFontFallback {
         ImFontGlyphRangesBuilder rangesBuilder = new ImFontGlyphRangesBuilder();
         rangesBuilder.addRanges(atlas.getGlyphRangesDefault());
         rangesBuilder.addRanges(atlas.getGlyphRangesChineseSimplifiedCommon());
-        addActiveTranslationGlyphs(rangesBuilder);
+        if (WarmaIslandFixConfig.scanAllTranslations()) {
+            addActiveTranslationGlyphs(rangesBuilder);
+        }
         for (char glyph : EXTRA_GLYPHS) {
             rangesBuilder.addChar(glyph);
         }

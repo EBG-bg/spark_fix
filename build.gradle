@@ -44,6 +44,7 @@ dependencies {
     clientCompileOnly "maven.modrinth:axiom:${project.axiom_version}"
     clientCompileOnly "me.shedaniel:RoughlyEnoughItems-api-fabric:${project.rei_version}"
     clientCompileOnly "me.shedaniel:RoughlyEnoughItems-default-plugin-fabric:${project.rei_version}"
+    clientCompileOnly "maven.modrinth:modmenu:${project.modmenu_version}"
 }
 
 processResources {

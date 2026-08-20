@@ -86,8 +86,8 @@ abstract class AxiomEditorUIFontMixin {
                 result.minimal()
             );
             return true;
-        } catch (Throwable throwable) {
-            WARMAISLANDFIX_LOGGER.error("Unexpected error while rebuilding Axiom's font atlas.", throwable);
+        } catch (RuntimeException | LinkageError exception) {
+            WARMAISLANDFIX_LOGGER.error("Unexpected error while rebuilding Axiom's font atlas.", exception);
             AxiomFontToast.showFailure();
             return false;
         }

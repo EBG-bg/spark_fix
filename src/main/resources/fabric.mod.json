@@ -12,7 +12,10 @@
     "entrypoints":  {
                         "client":  [
                                        "dev.codex.warmaislandfix.WarmaIslandFixClient"
-                                   ]
+                                   ],
+                        "modmenu":  [
+                                         "dev.codex.warmaislandfix.WarmaIslandFixModMenu"
+                                     ]
                     },
     "mixins":  [
                    {
@@ -49,6 +52,7 @@
                      "patpat":  "*",
                      "chatpatches":  "*",
                      "axiom":  "5.5.0",
-                     "roughlyenoughitems":  "26.2.820"
+                     "roughlyenoughitems":  "26.2.820",
+                     "modmenu":  "20.0.1"
                  }
 }

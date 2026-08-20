@@ -47,13 +47,13 @@ public final class WarmaIslandFixClient implements ClientModInitializer {
         try {
             cleanup.run();
             LOGGER.info("Cleaned up {}.", displayName);
-        } catch (Throwable throwable) {
+        } catch (ReflectiveOperationException | RuntimeException | LinkageError exception) {
             // Never allow one third-party compatibility failure to prevent the other cleanups.
-            LOGGER.error("Failed to clean up {}. Minecraft will continue shutting down.", displayName, throwable);
+            LOGGER.error("Failed to clean up {}. Minecraft will continue shutting down.", displayName, exception);
         }
     }
 
-    private static void cleanupLeawindThirdPerson() throws Exception {
+    private static void cleanupLeawindThirdPerson() throws ReflectiveOperationException {
         Class<?> managerClass = loadClass("com.github.leawind.thirdperson.core.config.ConfigManager");
         Object manager = managerClass.getField("INSTANCE").get(null);
 
@@ -76,7 +76,7 @@ public final class WarmaIslandFixClient implements ClientModInitializer {
         }
     }
 
-    private static void cleanupPatPat() throws Exception {
+    private static void cleanupPatPat() throws ReflectiveOperationException {
         Class<?> autoSaveManager = loadClass(
             "net.lopymine.patpat.client.config.PatPatClientStatsConfig$AutoSaveManager"
         );
@@ -90,7 +90,7 @@ public final class WarmaIslandFixClient implements ClientModInitializer {
         }
     }
 
-    private static void cleanupTabTps() throws Exception {
+    private static void cleanupTabTps() throws ReflectiveOperationException {
         Class<?> fabricClass = loadClass("xyz.jpenilla.tabtps.fabric.TabTPSFabric");
         Object fabricInstance = fabricClass.getMethod("get").invoke(null);
         Object tabTps = fabricClass.getMethod("tabTPS").invoke(fabricInstance);
@@ -116,6 +116,6 @@ public final class WarmaIslandFixClient implements ClientModInitializer {
 
     @FunctionalInterface
     private interface ThrowingRunnable {
-        void run() throws Exception;
+        void run() throws ReflectiveOperationException;
     }
 }

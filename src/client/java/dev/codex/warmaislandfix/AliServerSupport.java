@@ -34,8 +34,8 @@ public final class AliServerSupport {
             if (type instanceof CustomPacketPayload.Type<?> payloadType) {
                 return ClientPlayNetworking.canSend(payloadType);
             }
-        } catch (Throwable throwable) {
-            LOGGER.debug("Could not check the ALI loot-data channel; treating it as unavailable.", throwable);
+        } catch (ReflectiveOperationException | RuntimeException | LinkageError exception) {
+            LOGGER.debug("Could not check the ALI loot-data channel; treating it as unavailable.", exception);
         }
 
         return false;

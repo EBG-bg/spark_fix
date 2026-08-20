@@ -18,7 +18,9 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.util.ArrayList;
+import java.util.HashSet;
 import java.util.List;
+import java.util.Set;
 
 public final class ReiClientTransferFallback {
     private static final Logger LOGGER = LoggerFactory.getLogger("warmaislandfix/rei-transfer");
@@ -43,25 +45,34 @@ public final class ReiClientTransferFallback {
         Minecraft minecraft = context.getMinecraft();
         Player player = minecraft.player;
         MultiPlayerGameMode gameMode = minecraft.gameMode;
-        if (player == null || gameMode == null) {
+        AbstractContainerMenu menu = context.getMenu();
+        if (player == null || gameMode == null || menu == null) {
             return failed("error.warmaislandfix.rei_transfer.unavailable");
         }
+        if (menu != player.containerMenu) {
+            return failed("error.warmaislandfix.rei_transfer.menu_changed");
+        }
 
-        AbstractContainerMenu menu = context.getMenu();
         List<SlotAccessor> inputAccessors = snapshot(inputSlots);
         List<SlotAccessor> inventoryAccessors = snapshot(inventorySlots);
         List<Integer> inputIndices = resolveIndices(menu, player, inputAccessors);
         List<Integer> inventoryIndices = resolveIndices(menu, player, inventoryAccessors);
-        if (inputIndices.contains(-1) || inventoryIndices.contains(-1) || inputIndices.size() < inputs.size()) {
+        if (!validIndices(menu, inputIndices)
+                || !validIndices(menu, inventoryIndices)
+                || inputIndices.size() < inputs.size()) {
             return failed("error.warmaislandfix.rei_transfer.unsupported");
         }
-
-        minecraft.setScreenAndShow(context.getContainerScreen());
-        if (!parkCursor(gameMode, menu, player, inventoryIndices)) {
-            return failed("error.warmaislandfix.rei_transfer.cursor");
+        if (hasOverlap(inputIndices, inventoryIndices)) {
+            return failed("error.warmaislandfix.rei_transfer.overlap");
         }
-        if (!clearInputs(gameMode, menu, player, inputIndices)) {
-            return failed("error.warmaislandfix.rei_transfer.inventory_full");
+
+        TransferSession session = new TransferSession(minecraft, gameMode, player, menu);
+        minecraft.setScreenAndShow(context.getContainerScreen());
+        if (!parkCursor(session, inventoryIndices)) {
+            return failure(session, "error.warmaislandfix.rei_transfer.cursor");
+        }
+        if (!clearInputs(session, inputIndices)) {
+            return failure(session, "error.warmaislandfix.rei_transfer.inventory_full");
         }
 
         TransferPlan plan = createPlan(menu, inputs, inventoryAccessors, inputIndices, context.isStackedCrafting());
@@ -71,16 +82,21 @@ public final class ReiClientTransferFallback {
 
         try {
             for (Placement placement : plan.placements()) {
-                if (!placeItems(gameMode, menu, player, inventoryIndices, placement)) {
-                    return failed("error.warmaislandfix.rei_transfer.rejected");
+                if (!placeItems(session, inventoryIndices, placement)) {
+                    cleanupCursor(session, inventoryIndices);
+                    return failure(session, "error.warmaislandfix.rei_transfer.rejected");
                 }
             }
         } catch (RuntimeException exception) {
             LOGGER.error("Client-side REI transfer failed", exception);
-            parkCursor(gameMode, menu, player, inventoryIndices);
-            return failed("error.warmaislandfix.rei_transfer.failed");
+            cleanupCursor(session, inventoryIndices);
+            return failure(session, "error.warmaislandfix.rei_transfer.failed");
         }
 
+        if (!session.isCurrent() || !menu.getCarried().isEmpty()) {
+            cleanupCursor(session, inventoryIndices);
+            return failure(session, "error.warmaislandfix.rei_transfer.failed");
+        }
         return TransferHandler.Result.createSuccessful();
     }
 
@@ -146,41 +162,128 @@ public final class ReiClientTransferFallback {
     }
 
     private static boolean placeItems(
-            MultiPlayerGameMode gameMode,
-            AbstractContainerMenu menu,
-            Player player,
+            TransferSession session,
             List<Integer> inventoryIndices,
             Placement placement
     ) {
+        AbstractContainerMenu menu = session.menu;
         int remaining = placement.count();
         Slot target = menu.getSlot(placement.targetSlot());
         while (remaining > 0) {
+            if (!session.isCurrent() || !menu.getCarried().isEmpty()) {
+                return false;
+            }
+
             int sourceIndex = findMatchingSource(menu, inventoryIndices, placement.stack());
             if (sourceIndex < 0) {
                 return false;
             }
 
-            click(gameMode, menu, player, sourceIndex, 0, ContainerInput.PICKUP);
+            Slot source = menu.getSlot(sourceIndex);
+            ItemStack sourceBefore = source.getItem().copy();
+            if (!session.click(sourceIndex, 0, ContainerInput.PICKUP)) {
+                return false;
+            }
             ItemStack carried = menu.getCarried();
             if (carried.isEmpty() || !ItemStack.isSameItemSameComponents(carried, placement.stack())) {
                 return false;
             }
-
-            int before = target.getItem().getCount();
-            int toPlace = Math.min(remaining, carried.getCount());
-            for (int count = 0; count < toPlace; count++) {
-                click(gameMode, menu, player, placement.targetSlot(), 1, ContainerInput.PICKUP);
-            }
-            int placed = target.getItem().getCount() - before;
-            if (!menu.getCarried().isEmpty()) {
-                click(gameMode, menu, player, sourceIndex, 0, ContainerInput.PICKUP);
-            }
-            if (!menu.getCarried().isEmpty() || placed <= 0) {
+            if (!source.getItem().isEmpty() || sourceBefore.isEmpty()) {
                 return false;
+            }
+
+            ItemStack targetBefore = target.getItem().copy();
+            if (!target.mayPlace(carried)) {
+                return false;
+            }
+            if (!targetBefore.isEmpty()
+                    && !ItemStack.isSameItemSameComponents(targetBefore, carried)) {
+                return false;
+            }
+
+            int capacity = target.getMaxStackSize(carried);
+            int targetCount = targetBefore.isEmpty() ? 0 : targetBefore.getCount();
+            int availableSpace = capacity - targetCount;
+            int toPlace = Math.min(remaining, Math.min(carried.getCount(), availableSpace));
+            if (toPlace < 1) {
+                return false;
+            }
+
+            int placed;
+            if (targetBefore.isEmpty() && toPlace == carried.getCount() && capacity >= carried.getCount()) {
+                if (!session.click(placement.targetSlot(), 0, ContainerInput.PICKUP)) {
+                    return false;
+                }
+                ItemStack targetAfter = target.getItem();
+                if (targetAfter.isEmpty()
+                        || !ItemStack.isSameItemSameComponents(targetAfter, carried)
+                        || targetAfter.getCount() != targetCount + toPlace
+                        || !menu.getCarried().isEmpty()) {
+                    return false;
+                }
+                placed = targetAfter.getCount() - targetCount;
+            } else {
+                placed = 0;
+                for (int count = 0; count < toPlace; count++) {
+                    ItemStack targetBeforeClick = target.getItem().copy();
+                    ItemStack carriedBeforeClick = menu.getCarried().copy();
+                    if (!session.click(placement.targetSlot(), 1, ContainerInput.PICKUP)) {
+                        return false;
+                    }
+                    ItemStack targetAfterClick = target.getItem();
+                    ItemStack carriedAfterClick = menu.getCarried();
+                    if (!validSinglePlacement(
+                            targetBeforeClick,
+                            targetAfterClick,
+                            carriedBeforeClick,
+                            carriedAfterClick,
+                            placement.stack()
+                    )) {
+                        return false;
+                    }
+                    placed++;
+                }
+            }
+
+            if (placed < 1 || placed > remaining) {
+                return false;
+            }
+            if (!menu.getCarried().isEmpty()) {
+                ItemStack carriedBeforeReturn = menu.getCarried().copy();
+                if (!session.click(sourceIndex, 0, ContainerInput.PICKUP)) {
+                    return false;
+                }
+                ItemStack sourceAfterReturn = source.getItem();
+                if (!menu.getCarried().isEmpty()
+                        || sourceAfterReturn.isEmpty()
+                        || !ItemStack.isSameItemSameComponents(sourceAfterReturn, placement.stack())
+                        || sourceAfterReturn.getCount() < carriedBeforeReturn.getCount()) {
+                    return false;
+                }
             }
             remaining -= placed;
         }
         return true;
+    }
+
+    private static boolean validSinglePlacement(
+            ItemStack targetBefore,
+            ItemStack targetAfter,
+            ItemStack carriedBefore,
+            ItemStack carriedAfter,
+            ItemStack wanted
+    ) {
+        if (targetAfter.isEmpty()
+                || !ItemStack.isSameItemSameComponents(targetAfter, wanted)
+                || targetAfter.getCount() != targetBefore.getCount() + 1
+                || carriedBefore.isEmpty()) {
+            return false;
+        }
+        if (carriedAfter.isEmpty()) {
+            return carriedBefore.getCount() == 1;
+        }
+        return ItemStack.isSameItemSameComponents(carriedAfter, wanted)
+                && carriedAfter.getCount() == carriedBefore.getCount() - 1;
     }
 
     private static int findMatchingSource(
@@ -198,24 +301,33 @@ public final class ReiClientTransferFallback {
     }
 
     private static boolean parkCursor(
-            MultiPlayerGameMode gameMode,
-            AbstractContainerMenu menu,
-            Player player,
+            TransferSession session,
             List<Integer> inventoryIndices
     ) {
+        AbstractContainerMenu menu = session.menu;
         while (!menu.getCarried().isEmpty()) {
-            ItemStack carried = menu.getCarried();
-            int previousCount = carried.getCount();
-            int destination = findCursorDestination(menu, inventoryIndices, carried);
-            if (destination < 0) {
+            if (!session.isCurrent()) {
                 return false;
             }
-            click(gameMode, menu, player, destination, 0, ContainerInput.PICKUP);
-            if (!menu.getCarried().isEmpty() && menu.getCarried().getCount() >= previousCount) {
+            ItemStack carried = menu.getCarried().copy();
+            int destination = findCursorDestination(menu, inventoryIndices, carried);
+            if (destination < 0 || !session.click(destination, 0, ContainerInput.PICKUP)) {
+                return false;
+            }
+            ItemStack carriedAfter = menu.getCarried();
+            if (!carriedAfter.isEmpty()
+                    && (!ItemStack.isSameItemSameComponents(carriedAfter, carried)
+                        || carriedAfter.getCount() >= carried.getCount())) {
                 return false;
             }
         }
         return true;
+    }
+
+    private static void cleanupCursor(TransferSession session, List<Integer> inventoryIndices) {
+        if (session.isCurrent() && !session.menu.getCarried().isEmpty()) {
+            parkCursor(session, inventoryIndices);
+        }
     }
 
     private static int findCursorDestination(
@@ -243,15 +355,20 @@ public final class ReiClientTransferFallback {
     }
 
     private static boolean clearInputs(
-            MultiPlayerGameMode gameMode,
-            AbstractContainerMenu menu,
-            Player player,
+            TransferSession session,
             List<Integer> inputIndices
     ) {
+        AbstractContainerMenu menu = session.menu;
         for (int slotIndex : inputIndices) {
-            if (!menu.getSlot(slotIndex).getItem().isEmpty()) {
-                click(gameMode, menu, player, slotIndex, 0, ContainerInput.QUICK_MOVE);
-                if (!menu.getSlot(slotIndex).getItem().isEmpty()) {
+            Slot input = menu.getSlot(slotIndex);
+            if (!input.getItem().isEmpty()) {
+                ItemStack carriedBefore = menu.getCarried().copy();
+                if (!session.click(slotIndex, 0, ContainerInput.QUICK_MOVE)) {
+                    return false;
+                }
+                ItemStack carriedAfter = menu.getCarried();
+                if (!input.getItem().isEmpty()
+                        || !sameStackState(carriedBefore, carriedAfter)) {
                     return false;
                 }
             }
@@ -259,15 +376,12 @@ public final class ReiClientTransferFallback {
         return true;
     }
 
-    private static void click(
-            MultiPlayerGameMode gameMode,
-            AbstractContainerMenu menu,
-            Player player,
-            int slot,
-            int button,
-            ContainerInput input
-    ) {
-        gameMode.handleContainerInput(menu.containerId, slot, button, input, player);
+    private static boolean sameStackState(ItemStack first, ItemStack second) {
+        if (first.isEmpty() || second.isEmpty()) {
+            return first.isEmpty() && second.isEmpty();
+        }
+        return first.getCount() == second.getCount()
+                && ItemStack.isSameItemSameComponents(first, second);
     }
 
     private static ItemRecipeFinder createFinder(Iterable<SlotAccessor> inventorySlots) {
@@ -316,6 +430,41 @@ public final class ReiClientTransferFallback {
         return -1;
     }
 
+    private static boolean validIndices(AbstractContainerMenu menu, List<Integer> indices) {
+        for (int index : indices) {
+            if (index < 0 || index >= menu.slots.size()) {
+                return false;
+            }
+        }
+        return true;
+    }
+
+    private static boolean hasOverlap(List<Integer> inputs, List<Integer> inventory) {
+        Set<Integer> inputSet = new HashSet<>(inputs);
+        for (int index : inventory) {
+            if (inputSet.contains(index)) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    private static TransferHandler.Result failure(TransferSession session, String translationKey) {
+        if (session.limitReached) {
+            return failedLimit(session.maxClicks);
+        }
+        if (!session.isCurrent()) {
+            return failed("error.warmaislandfix.rei_transfer.menu_changed");
+        }
+        return failed(translationKey);
+    }
+
+    private static TransferHandler.Result failedLimit(int maxClicks) {
+        return TransferHandler.Result.createFailed(
+            Component.translatable("error.warmaislandfix.rei_transfer.limit", maxClicks)
+        );
+    }
+
     private static TransferHandler.Result failed(String translationKey) {
         return TransferHandler.Result.createFailed(Component.translatable(translationKey));
     }
@@ -324,5 +473,51 @@ public final class ReiClientTransferFallback {
     }
 
     private record TransferPlan(List<Placement> placements) {
+    }
+
+    private static final class TransferSession {
+        private final Minecraft minecraft;
+        private final MultiPlayerGameMode gameMode;
+        private final Player player;
+        private final AbstractContainerMenu menu;
+        private final int containerId;
+        private final int maxClicks;
+        private int clicks;
+        private boolean limitReached;
+
+        private TransferSession(
+                Minecraft minecraft,
+                MultiPlayerGameMode gameMode,
+                Player player,
+                AbstractContainerMenu menu
+        ) {
+            this.minecraft = minecraft;
+            this.gameMode = gameMode;
+            this.player = player;
+            this.menu = menu;
+            this.containerId = menu.containerId;
+            this.maxClicks = WarmaIslandFixConfig.maxReiClicks();
+        }
+
+        private boolean isCurrent() {
+            return this.minecraft.player == this.player
+                    && this.minecraft.gameMode == this.gameMode
+                    && this.player.containerMenu == this.menu
+                    && this.menu.containerId == this.containerId;
+        }
+
+        private boolean click(int slot, int button, ContainerInput input) {
+            if (!isCurrent() || slot < 0 || slot >= this.menu.slots.size()) {
+                return false;
+            }
+            if (this.clicks >= this.maxClicks) {
+                this.limitReached = true;
+                return false;
+            }
+
+            this.clicks++;
+            this.gameMode.handleContainerInput(this.containerId, slot, button, input, this.player);
+            return true;
+        }
     }
 }
