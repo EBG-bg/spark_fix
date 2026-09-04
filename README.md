@@ -2,7 +2,7 @@
 
 这是从已归档的 `warmaislandfix` 项目独立延续的版本。由于模组 ID 已更改为 `spark_fix`，请先移除旧 JAR，再安装本项目的 JAR。
 
-针对 [沃玛岛服务器](https://www.warma.fans/mc) 游玩过程中遇到的各类问题提供客户端修复（面向 Minecraft 26.2 Fabric 客户端）。
+针对 [沃玛岛服务器](https://www.warma.fans/mc) 及其他mc模组的游玩过程中遇到的各类问题提供客户端修复（面向 Minecraft 26.2 Fabric 客户端）。
 
 未触发问题时尽量保持原模组和原版行为。
 
