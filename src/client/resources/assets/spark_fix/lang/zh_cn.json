@@ -1,0 +1,17 @@
+{
+  "error.spark_fix.rei_transfer.unavailable": "当前容器暂时无法执行客户端配方摆放",
+  "error.spark_fix.rei_transfer.unsupported": "当前容器的槽位结构不支持客户端配方摆放",
+  "error.spark_fix.rei_transfer.cursor": "请先为鼠标指针上的物品腾出背包空间",
+  "error.spark_fix.rei_transfer.inventory_full": "背包空间不足，无法清空配方输入槽",
+  "error.spark_fix.rei_transfer.rejected": "服务器拒绝了部分容器操作，请重新打开容器后再试",
+  "error.spark_fix.rei_transfer.failed": "客户端配方摆放失败，物品已尽量保留在背包中",
+  "error.spark_fix.rei_transfer.limit": "REI 摆放达到点击上限（%s），已安全停止",
+  "error.spark_fix.rei_transfer.menu_changed": "摆放过程中打开的容器发生了变化",
+  "error.spark_fix.rei_transfer.overlap": "当前容器将同一槽位同时作为输入槽和背包槽",
+  "config.spark_fix.title": "spark_fix 设置",
+  "config.spark_fix.rei_max_clicks": "REI 单次摆放最大点击次数",
+  "config.spark_fix.axiom_scan_all_translations": "Axiom：遍历当前语言全部翻译文件",
+  "config.spark_fix.on": "开启",
+  "config.spark_fix.off": "关闭",
+  "config.spark_fix.done": "完成"
+}

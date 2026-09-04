@@ -1,0 +1,13 @@
+{
+  "required": false,
+  "package": "dev.codex.spark_fix.mixin.client",
+  "compatibilityLevel": "JAVA_25",
+  "client": [
+    "AxiomEditorUIFontMixin",
+    "AxiomImAssertCallbackMixin",
+    "AxiomLiteralTextMixin"
+  ],
+  "injectors": {
+    "defaultRequire": 0
+  }
+}

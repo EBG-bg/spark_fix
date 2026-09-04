@@ -1,0 +1,11 @@
+{
+  "required": false,
+  "package": "dev.codex.spark_fix.mixin.client",
+  "compatibilityLevel": "JAVA_25",
+  "client": [
+    "AliJeiClientCompatibilityMixin"
+  ],
+  "injectors": {
+    "defaultRequire": 0
+  }
+}

@@ -27,7 +27,7 @@ loom {
     splitEnvironmentSourceSets()
 
     mods {
-        "warmaislandfix" {
+        "spark_fix" {
             sourceSet sourceSets.main
             sourceSet sourceSets.client
         }
@@ -40,7 +40,7 @@ dependencies {
     implementation "net.fabricmc.fabric-api:fabric-api:${project.fabric_api_version}"
 
     // Optional compatibility targets. These are available while compiling but
-    // remain optional at runtime and are never bundled into warmaislandfix.
+    // remain optional at runtime and are never bundled into spark_fix.
     clientCompileOnly "maven.modrinth:axiom:${project.axiom_version}"
     clientCompileOnly "me.shedaniel:RoughlyEnoughItems-api-fabric:${project.rei_version}"
     clientCompileOnly "me.shedaniel:RoughlyEnoughItems-default-plugin-fabric:${project.rei_version}"

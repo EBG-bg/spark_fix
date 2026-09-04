@@ -1,8 +1,8 @@
 {
     "schemaVersion":  1,
-    "id":  "warmaislandfix",
+    "id":  "spark_fix",
     "version":  "${version}",
-    "name":  "warmaislandfix",
+    "name":  "spark_fix",
     "description":  "Fixes client shutdown hangs, ALI/JEI freezes, Chat Patches codec errors, waypoint disconnects, Axiom Chinese UI/font failures, REI transfers on plugin servers, and consumable use while rowing boats.",
     "authors":  [
                     "Codex"
@@ -11,31 +11,31 @@
     "environment":  "client",
     "entrypoints":  {
                         "client":  [
-                                       "dev.codex.warmaislandfix.WarmaIslandFixClient"
+                                       "dev.codex.spark_fix.SparkFixClient"
                                    ],
                         "modmenu":  [
-                                         "dev.codex.warmaislandfix.WarmaIslandFixModMenu"
+                                         "dev.codex.spark_fix.SparkFixModMenu"
                                      ]
                     },
     "mixins":  [
                    {
-                       "config":  "warmaislandfix.client.mixins.json",
+                       "config":  "spark_fix.client.mixins.json",
                        "environment":  "client"
                    },
                    {
-                       "config":  "warmaislandfix.ali_compat.client.mixins.json",
+                       "config":  "spark_fix.ali_compat.client.mixins.json",
                        "environment":  "client"
                    },
                    {
-                       "config":  "warmaislandfix.chatpatches_compat.client.mixins.json",
+                       "config":  "spark_fix.chatpatches_compat.client.mixins.json",
                        "environment":  "client"
                    },
                    {
-                       "config":  "warmaislandfix.axiom_compat.client.mixins.json",
+                       "config":  "spark_fix.axiom_compat.client.mixins.json",
                        "environment":  "client"
                    },
                    {
-                       "config":  "warmaislandfix.rei_compat.client.mixins.json",
+                       "config":  "spark_fix.rei_compat.client.mixins.json",
                        "environment":  "client"
                    }
                ],

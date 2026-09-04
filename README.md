@@ -1,4 +1,6 @@
-# warmaislandfix
+# spark_fix
+
+这是从已归档的 `warmaislandfix` 项目独立延续的版本。由于模组 ID 已更改为 `spark_fix`，请先移除旧 JAR，再安装本项目的 JAR。
 
 针对 [沃玛岛服务器](https://www.warma.fans/mc) 游玩过程中遇到的各类问题提供客户端修复（面向 Minecraft 26.2 Fabric 客户端）。
 
@@ -25,11 +27,11 @@
 
 下载：
 
-- [下载 warmaislandfix-1.7.4.jar](https://github.com/EBG-bg/warmaislandfix/releases/download/v1.7.4/warmaislandfix-1.7.4.jar)
-- [查看 v1.7.4 发布页](https://github.com/EBG-bg/warmaislandfix/releases/tag/v1.7.4)
+- [下载 spark_fix-2.0.0.jar](https://github.com/EBG-bg/spark_fix/releases/download/v2.0.0/spark_fix-2.0.0.jar)
+- [查看 v2.0.0 发布页](https://github.com/EBG-bg/spark_fix/releases/tag/v2.0.0)
 
 1. 安装 Minecraft 26.2、Fabric Loader 和 Fabric API。
-2. 将发布的 `warmaislandfix-1.7.4.jar` 放入客户端 `mods` 目录。
+2. 删除旧的 `warmaislandfix-*.jar`，再将发布的 `spark_fix-2.0.0.jar` 放入客户端 `mods` 目录。
 3. 不要安装调试构建，也不需要在服务器安装本模组。
 
 ## 配置
@@ -39,7 +41,9 @@
 - `REI 单次摆放最大点击次数`：范围为 1 到 4096，默认 576。
 - `Axiom：遍历当前语言全部翻译文件`：默认关闭；开启后只影响字体回退时的字形收集。
 
-配置也会保存到 `config/warmaislandfix.properties`。修改后重新打开相关界面即可生效；REI 点击上限对下一次摆放生效，Axiom 字形选项对下一次字体图集回退生效。
+配置也会保存到 `config/spark_fix.properties`。修改后重新打开相关界面即可生效；REI 点击上限对下一次摆放生效，Axiom 字形选项对下一次字体图集回退生效。
+
+首次启动时，如果发现旧的 `config/warmaislandfix.properties`，会自动复制为 `config/spark_fix.properties`；旧文件会保留，不会被删除。
 
 ## 构建
 

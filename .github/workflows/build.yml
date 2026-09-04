@@ -32,5 +32,5 @@ jobs:
       - name: Upload JAR
         uses: actions/upload-artifact@v4
         with:
-          name: warmaislandfix
-          path: build/libs/warmaislandfix-*.jar
+          name: spark_fix
+          path: build/libs/spark_fix-*.jar
