@@ -20,10 +20,16 @@ public final class SparkFixConfig {
     private static final Logger LOGGER = LoggerFactory.getLogger("spark_fix/config");
     private static final String MAX_REI_CLICKS_KEY = "rei.max_clicks";
     private static final String SCAN_ALL_TRANSLATIONS_KEY = "axiom.scan_all_translations";
+    private static final String ADOFAIGO_ENABLED_KEY = "adofaigo.enabled";
+    private static final String REI_RECIPE_BRIDGE_ENABLED_KEY = "rei_recipe_bridge.enabled";
     private static final String LEGACY_CONFIG_FILE_NAME = "warmaislandfix.properties";
 
     private static int maxReiClicks = DEFAULT_MAX_REI_CLICKS;
     private static boolean scanAllTranslations;
+    private static boolean adofaigoEnabled;
+    private static boolean reiRecipeBridgeEnabled;
+    private static boolean adofaigoEnabledAtStartup;
+    private static boolean reiRecipeBridgeEnabledAtStartup;
     private static boolean loaded;
 
     private SparkFixConfig() {
@@ -40,6 +46,7 @@ public final class SparkFixConfig {
         if (!Files.isRegularFile(file)) {
             Path legacyFile = legacyConfigFile();
             if (!Files.isRegularFile(legacyFile)) {
+                captureStartupValues();
                 return;
             }
             file = legacyFile;
@@ -53,6 +60,12 @@ public final class SparkFixConfig {
             scanAllTranslations = Boolean.parseBoolean(
                 properties.getProperty(SCAN_ALL_TRANSLATIONS_KEY, Boolean.FALSE.toString())
             );
+            adofaigoEnabled = Boolean.parseBoolean(
+                properties.getProperty(ADOFAIGO_ENABLED_KEY, Boolean.FALSE.toString())
+            );
+            reiRecipeBridgeEnabled = Boolean.parseBoolean(
+                properties.getProperty(REI_RECIPE_BRIDGE_ENABLED_KEY, Boolean.FALSE.toString())
+            );
             if (migrateLegacyConfig) {
                 try {
                     Files.copy(file, configFile());
@@ -64,6 +77,7 @@ public final class SparkFixConfig {
         } catch (IOException | RuntimeException exception) {
             LOGGER.warn("Could not load spark_fix configuration; using defaults.", exception);
         }
+        captureStartupValues();
     }
 
     public static synchronized void save() {
@@ -72,6 +86,8 @@ public final class SparkFixConfig {
         Properties properties = new Properties();
         properties.setProperty(MAX_REI_CLICKS_KEY, Integer.toString(maxReiClicks));
         properties.setProperty(SCAN_ALL_TRANSLATIONS_KEY, Boolean.toString(scanAllTranslations));
+        properties.setProperty(ADOFAIGO_ENABLED_KEY, Boolean.toString(adofaigoEnabled));
+        properties.setProperty(REI_RECIPE_BRIDGE_ENABLED_KEY, Boolean.toString(reiRecipeBridgeEnabled));
 
         Path file = configFile();
         try {
@@ -102,6 +118,41 @@ public final class SparkFixConfig {
     public static synchronized void setScanAllTranslations(boolean value) {
         load();
         scanAllTranslations = value;
+    }
+
+    public static synchronized boolean adofaigoEnabled() {
+        load();
+        return adofaigoEnabled;
+    }
+
+    public static synchronized void setAdofoigoEnabled(boolean value) {
+        load();
+        adofaigoEnabled = value;
+    }
+
+    public static synchronized boolean adofaigoEnabledAtStartup() {
+        load();
+        return adofaigoEnabledAtStartup;
+    }
+
+    public static synchronized boolean reiRecipeBridgeEnabled() {
+        load();
+        return reiRecipeBridgeEnabled;
+    }
+
+    public static synchronized void setReiRecipeBridgeEnabled(boolean value) {
+        load();
+        reiRecipeBridgeEnabled = value;
+    }
+
+    public static synchronized boolean reiRecipeBridgeEnabledAtStartup() {
+        load();
+        return reiRecipeBridgeEnabledAtStartup;
+    }
+
+    private static void captureStartupValues() {
+        adofaigoEnabledAtStartup = adofaigoEnabled;
+        reiRecipeBridgeEnabledAtStartup = reiRecipeBridgeEnabled;
     }
 
     private static int readMaxReiClicks(String value) {

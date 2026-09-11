@@ -1,0 +1,15 @@
+{
+  "rei_recipe_bridge.title": "REI Recipe Bridge",
+  "rei_recipe_bridge.vanilla_toggle": "Provide vanilla recipes to REI",
+  "rei_recipe_bridge.capture_toggle": "Capture and save unlocked recipes",
+  "rei_recipe_bridge.save": "Save and Back",
+  "rei_recipe_bridge.refresh": "Refresh Recipe Statistics",
+  "rei_recipe_bridge.vanilla_mode": "Vanilla local fallback: %s",
+  "rei_recipe_bridge.total": "Current REI display entries: %s",
+  "rei_recipe_bridge.named": "Entries with namespaced IDs: %s",
+  "rei_recipe_bridge.vanilla": "Entries in minecraft namespace: %s",
+  "rei_recipe_bridge.cached": "Cached for this server: %s",
+  "rei_recipe_bridge.packet": "Last received / merged / registered: %s / %s / %s",
+  "rei_recipe_bridge.no_recipes": "Recipes are not loaded yet. Join a world or server first.",
+  "rei_recipe_bridge.capture_hint": "Only vanilla recipes are added locally. When capture is enabled, recipes sent or unlocked by this server are saved and restored to REI."
+}

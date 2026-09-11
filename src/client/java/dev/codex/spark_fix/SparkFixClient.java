@@ -1,5 +1,6 @@
 package dev.codex.spark_fix;
 
+import cn.reibridge.config.BridgeConfig;
 import net.fabricmc.api.ClientModInitializer;
 import net.fabricmc.fabric.api.client.event.lifecycle.v1.ClientLifecycleEvents;
 import net.fabricmc.loader.api.FabricLoader;
@@ -18,12 +19,20 @@ import java.util.concurrent.atomic.AtomicBoolean;
  * after Minecraft's render thread has stopped.
  */
 public final class SparkFixClient implements ClientModInitializer {
-    private static final Logger LOGGER = LoggerFactory.getLogger("spark_fix");
+    static final Logger LOGGER = LoggerFactory.getLogger("spark_fix");
     private static final AtomicBoolean CLEANUP_STARTED = new AtomicBoolean();
 
     @Override
     public void onInitializeClient() {
-        LOGGER.info("Loaded. Shutdown, ALI/JEI, Chat Patches, waypoint disconnect, Axiom font recovery, REI transfer, and boat consumable fixes are enabled.");
+        SparkFixConfig.load();
+        if (FabricLoader.getInstance().isModLoaded("roughlyenoughitems")) {
+            BridgeConfig.load();
+        }
+        LOGGER.info(
+            "Loaded. ADOFAI={}, REI recipe bridge={}, REI transfer fallback and client compatibility fixes are ready.",
+            SparkFixConfig.adofaigoEnabledAtStartup(),
+            SparkFixConfig.reiRecipeBridgeEnabledAtStartup()
+        );
         ClientLifecycleEvents.CLIENT_STOPPING.register(client -> cleanupAll());
     }
 

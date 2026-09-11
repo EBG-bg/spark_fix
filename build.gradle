@@ -44,6 +44,10 @@ dependencies {
     clientCompileOnly "maven.modrinth:axiom:${project.axiom_version}"
     clientCompileOnly "me.shedaniel:RoughlyEnoughItems-api-fabric:${project.rei_version}"
     clientCompileOnly "me.shedaniel:RoughlyEnoughItems-default-plugin-fabric:${project.rei_version}"
+    clientCompileOnly "me.shedaniel:RoughlyEnoughItems-fabric:${project.rei_version}"
+    clientCompileOnly "dev.architectury:architectury-fabric:${project.architectury_version}"
+    clientCompileOnly "me.shedaniel.cloth:cloth-config-fabric:${project.cloth_config_version}"
+    clientCompileOnly "me.shedaniel.cloth:basic-math:${project.basic_math_version}"
     clientCompileOnly "maven.modrinth:modmenu:${project.modmenu_version}"
 }
 

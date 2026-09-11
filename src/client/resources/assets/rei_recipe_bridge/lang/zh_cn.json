@@ -1,0 +1,15 @@
+{
+  "rei_recipe_bridge.title": "REI 配方桥",
+  "rei_recipe_bridge.vanilla_toggle": "向 REI 提供原版配方",
+  "rei_recipe_bridge.capture_toggle": "自动捕获并保存已解锁配方",
+  "rei_recipe_bridge.save": "保存并返回",
+  "rei_recipe_bridge.refresh": "刷新配方统计",
+  "rei_recipe_bridge.vanilla_mode": "原版本地回退模式：%s",
+  "rei_recipe_bridge.total": "REI 当前显示条目：%s 条",
+  "rei_recipe_bridge.named": "其中带命名空间 ID：%s 条",
+  "rei_recipe_bridge.vanilla": "其中 minecraft 命名空间：%s 条",
+  "rei_recipe_bridge.cached": "当前服务器已缓存：%s 条",
+  "rei_recipe_bridge.packet": "最近下发 / 合并 / 注册到 REI：%s / %s / %s",
+  "rei_recipe_bridge.no_recipes": "尚未加载配方。请先进入世界或服务器。",
+  "rei_recipe_bridge.capture_hint": "本地仅补充原版配方；启用捕获后，服务器实际下发或当前已解锁的配方会按服务器保存，并重新提供给 REI。"
+}

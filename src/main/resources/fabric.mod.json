@@ -5,7 +5,8 @@
     "name":  "spark_fix",
     "description":  "Fixes client shutdown hangs, ALI/JEI freezes, Chat Patches codec errors, waypoint disconnects, Axiom Chinese UI/font failures, REI transfers on plugin servers, and consumable use while rowing boats.",
     "authors":  [
-                    "Codex"
+                    "Codex",
+                    "DianBing"
                 ],
     "license":  "CC0-1.0",
     "environment":  "client",
@@ -15,7 +16,10 @@
                                    ],
                         "modmenu":  [
                                          "dev.codex.spark_fix.SparkFixModMenu"
-                                     ]
+                                     ],
+                        "rei_client":  [
+                                             "cn.reibridge.compat.REIRecipeBridgePlugin"
+                                         ]
                     },
     "mixins":  [
                    {
@@ -36,6 +40,14 @@
                    },
                    {
                        "config":  "spark_fix.rei_compat.client.mixins.json",
+                       "environment":  "client"
+                   },
+                   {
+                       "config":  "spark_fix.adofaigo.client.mixins.json",
+                       "environment":  "client"
+                   },
+                   {
+                       "config":  "spark_fix.rei_bridge.client.mixins.json",
                        "environment":  "client"
                    }
                ],

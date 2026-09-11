@@ -1,0 +1,16 @@
+{
+  "required": false,
+  "package": "cn.reibridge.mixin",
+  "compatibilityLevel": "JAVA_25",
+  "client": [
+    "ClientPacketListenerMixin",
+    "REIConfigObjectMixin",
+    "REIFreshScissorStackMixin",
+    "REIMenuTooltipMixin",
+    "REISubMenuEntryMixin",
+    "REIMenuRenderMixin"
+  ],
+  "injectors": {
+    "defaultRequire": 0
+  }
+}

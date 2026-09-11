@@ -1,0 +1,11 @@
+{
+  "required": true,
+  "package": "com.adofaigo.client.mixin",
+  "compatibilityLevel": "JAVA_25",
+  "client": [
+    "PauseScreenMixin"
+  ],
+  "injectors": {
+    "defaultRequire": 1
+  }
+}
