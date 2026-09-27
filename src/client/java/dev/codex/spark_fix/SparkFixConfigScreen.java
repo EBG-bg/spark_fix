@@ -5,6 +5,7 @@ import net.minecraft.client.gui.components.Button;
 import net.minecraft.client.gui.components.CycleButton;
 import net.minecraft.client.gui.components.EditBox;
 import net.minecraft.client.gui.components.StringWidget;
+import net.minecraft.client.gui.components.Tooltip;
 import net.minecraft.client.gui.screens.Screen;
 import net.minecraft.network.chat.Component;
 
@@ -23,10 +24,10 @@ final class SparkFixConfigScreen extends Screen {
     @Override
     protected void init() {
         int center = this.width / 2;
-        int top = Math.max(42, this.height / 2 - 54);
+        int top = Math.max(42, this.height / 2 - 68);
         this.addRenderableWidget(Button.builder(
                 Component.translatable("config.spark_fix.integration_settings"),
-                button -> this.minecraft.setScreenAndShow(new AdofoigoSettingsScreen(this)))
+                button -> this.minecraft.setScreenAndShow(IntegrationSettingsRouter.create(this)))
                 .bounds(this.width - 210, 8, 200, 20).build());
         this.addRenderableWidget(new StringWidget(center - 100, top + 2, 200, 14,
                 Component.translatable("config.spark_fix.rei_max_clicks"), this.font));
@@ -39,8 +40,17 @@ final class SparkFixConfigScreen extends Screen {
                 .create(center - 100, top + 54, 200, 20,
                         Component.translatable("config.spark_fix.axiom_scan_all_translations"),
                         (button, value) -> this.scanAllTranslations = value));
+        var filterFavorites = this.addRenderableWidget(CycleButton.booleanBuilder(Component.translatable("config.spark_fix.on"),
+                Component.translatable("config.spark_fix.off"), SparkFixConfig.litematicaFilterFavorites())
+                .create(center - 100, top + 80, 200, 20,
+                        Component.translatable("config.spark_fix.litematica_filter_favorites"),
+                        (button, value) -> {
+                            SparkFixConfig.setLitematicaFilterFavorites(value);
+                            SparkFixConfig.save();
+                        }));
+        filterFavorites.setTooltip(Tooltip.create(Component.translatable("config.spark_fix.litematica_filter_favorites_hint")));
         this.addRenderableWidget(Button.builder(Component.translatable("config.spark_fix.done"),
-                button -> this.saveAndClose()).bounds(center - 100, top + 90, 200, 20).build());
+                button -> this.saveAndClose()).bounds(center - 100, top + 112, 200, 20).build());
         this.setInitialFocus(this.maxClicksField);
     }
 

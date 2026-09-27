@@ -13,3 +13,14 @@ run/
 
 .DS_Store
 Thumbs.db
+
+# Local investigations, instance backups, and generated artifacts stay off GitHub.
+/_analysis/
+/_artifacts/*
+!/_artifacts/config-presets/
+/_artifacts/config-presets/*
+!/_artifacts/config-presets/README.md
+!/_artifacts/config-presets/2026-09-27/
+/_artifacts/config-presets/2026-09-27/*
+!/_artifacts/config-presets/2026-09-27/常用别名_默认_蓝图.json
+/_tools/

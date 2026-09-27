@@ -49,6 +49,10 @@
                    {
                        "config":  "spark_fix.rei_bridge.client.mixins.json",
                        "environment":  "client"
+                   },
+                   {
+                       "config":  "spark_fix.litematica.client.mixins.json",
+                       "environment":  "client"
                    }
                ],
     "depends":  {
@@ -59,12 +63,14 @@
                 },
     "suggests":  {
                      "ali":  "*",
-                     "leawind_third_person":  "*",
                      "tabtps-fabric":  "*",
-                     "patpat":  "*",
                      "chatpatches":  "*",
                      "axiom":  "5.5.0",
                      "roughlyenoughitems":  "26.2.820",
-                     "modmenu":  "20.0.1"
+                     "modmenu":  "20.0.1",
+                     "owo":  ">=0.13.1",
+                     "litematica":  ">=0.28.8",
+                     "malilib":  ">=0.29.5 <0.30.0",
+                     "litematica-printer":  "*"
                  }
 }

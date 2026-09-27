@@ -1,0 +1,716 @@
+{
+  "litematica-printer::0::打开设置菜单": [
+    "打印机设置",
+    "打印机菜单"
+  ],
+  "litematica::0::areaSelectionBoxSideColor": [
+    "选区框侧面的颜色"
+  ],
+  "litematica::3::schematicRebuildBreakPlaceOverlayColor": [
+    "蓝图重建 - 破坏放置覆盖色",
+    "投影重建 - 破坏放置覆盖色"
+  ],
+  "litematica::2::materialListHudItemCountsColor": [
+    "材料清单HUD物品数量颜色"
+  ],
+  "litematica::4::schematicRebuildBreakExceptPlaceOverlayColor": [
+    "蓝图重建 - 保留破坏覆盖色",
+    "投影重建 - 保留破坏覆盖色"
+  ],
+  "litematica::5::schematicRebuildReplaceOverlayColor": [
+    "蓝图重建 - 替换覆盖色",
+    "投影重建 - 替换覆盖色"
+  ],
+  "litematica::6::schematicOverlayColorDiffBlock": [
+    "蓝图显示 - 差异方块颜色",
+    "投影显示 - 差异方块颜色"
+  ],
+  "litematica::7::schematicOverlayColorExtra": [
+    "蓝图多余方块颜色",
+    "多放方块高亮颜色",
+    "蓝图显示 - 多余方块颜色",
+    "投影显示 - 多余方块颜色"
+  ],
+  "litematica::8::schematicOverlayColorMissing": [
+    "蓝图缺失方块颜色",
+    "缺块高亮颜色",
+    "蓝图显示 - 缺失方块颜色",
+    "投影显示 - 缺失方块颜色"
+  ],
+  "litematica::9::schematicOverlayColorWrongBlock": [
+    "蓝图错误方块颜色",
+    "放错方块高亮颜色",
+    "蓝图显示 - 错误方块颜色",
+    "投影显示 - 错误方块颜色"
+  ],
+  "litematica::10::schematicOverlayColorWrongState": [
+    "蓝图方块状态错误颜色",
+    "方块朝向错误颜色",
+    "蓝图显示 - 错误状态颜色",
+    "投影显示 - 错误状态颜色"
+  ],
+  "litematica::12::easyPlaceProtocolVersion": [
+    "精准放置协议",
+    "轻松放置协议"
+  ],
+  "litematica::18::schematicVcsDeleteMode": [
+    "蓝图版本控制删除模式",
+    "投影版本控制删除模式"
+  ],
+  "litematica::20::customSchematicBaseDirectoryEnabled": [
+    "自定义蓝图文件夹开关",
+    "启用自定义蓝图根目录",
+    "启用自定义投影根目录"
+  ],
+  "litematica::21::customSchematicBaseDirectory": [
+    "蓝图文件夹",
+    "蓝图保存路径",
+    "自定义蓝图根目录",
+    "自定义投影根目录"
+  ],
+  "litematica::22::areaSelectionsPerWorld": [
+    "每世界选区数量"
+  ],
+  "litematica::37::debugHudWorld": [
+    "调试HUD蓝图世界",
+    "调试HUD投影世界"
+  ],
+  "litematica::39::deduplicateSchematicEntities": [
+    "蓝图实体去重",
+    "投影实体去重"
+  ],
+  "litematica::44::easyPlaceFirst": [
+    "优先放置近处方块"
+  ],
+  "litematica::45::easyPlaceHoldEnabled": [
+    "长按放置",
+    "按住右键连续放置"
+  ],
+  "litematica::46::easyPlaceMode": [
+    "辅助放置开关",
+    "右键辅助放置"
+  ],
+  "litematica::52::easyPlaceVanillaReach": [
+    "原版交互距离",
+    "轻松放置距离限制"
+  ],
+  "litematica::65::loadEntireSchematics": [
+    "加载完整蓝图",
+    "加载完整投影"
+  ],
+  "litematica::66::materialListCountEnderCache": [
+    "统计末影箱材料",
+    "末影箱材料缓存",
+    "材料清单统计末影箱缓存"
+  ],
+  "litematica::67::materialListIgnoreState": [
+    "材料清单忽略方块状态"
+  ],
+  "litematica::68::materialListRecipeDetails": [
+    "材料清单导出配方详情"
+  ],
+  "litematica::84::placementRestriction": [
+    "限制放置",
+    "防止放错方块"
+  ],
+  "litematica::86::renderMaterialListInGuis": [
+    "在GUI中显示材料清单"
+  ],
+  "litematica::91::toolItem": [
+    "投影工具物品",
+    "选区工具物品"
+  ],
+  "litematica::92::toolItemEnabled": [
+    "投影工具开关",
+    "选区工具开关"
+  ],
+  "litematica::96::unhideSchematicVCS": [
+    "显示蓝图版本控制系统",
+    "显示投影版本控制系统"
+  ],
+  "litematica::123::materialListHudMaxLines": [
+    "材料清单行数",
+    "材料列表最大行数",
+    "材料清单HUD最大行数"
+  ],
+  "litematica::124::materialListHudScale": [
+    "材料清单缩放",
+    "材料列表字体大小",
+    "材料清单HUD缩放比例"
+  ],
+  "litematica::134::enableAreaSelectionBoxesRendering": [
+    "选区框渲染"
+  ],
+  "litematica::135::enablePlacementBoxesRendering": [
+    "放置框渲染"
+  ],
+  "litematica::136::enableRendering": [
+    "投影显示总开关",
+    "全部投影渲染",
+    "投影渲染总开关"
+  ],
+  "litematica::137::enableSchematicBlocksRendering": [
+    "显示蓝图方块",
+    "开关 - 蓝图方块渲染",
+    "开关 - 投影方块渲染",
+    "蓝图方块渲染",
+    "投影方块渲染"
+  ],
+  "litematica::138::enableSchematicFluidRendering": [
+    "显示蓝图流体",
+    "显示蓝图水和岩浆",
+    "开关 - 蓝图流体渲染",
+    "开关 - 投影流体渲染",
+    "蓝图流体渲染",
+    "投影流体渲染"
+  ],
+  "litematica::139::enableSchematicOverlay": [
+    "蓝图校验颜色",
+    "蓝图错误高亮",
+    "开关 - 蓝图显示",
+    "开关 - 投影显示",
+    "蓝图显示",
+    "投影显示"
+  ],
+  "litematica::140::enableSchematicOverlayCulling": [
+    "开关 - 蓝图显示精简",
+    "开关 - 投影显示精简",
+    "蓝图显示精简",
+    "投影显示精简"
+  ],
+  "litematica::141::enableSchematicRendering": [
+    "显示蓝图",
+    "蓝图显示开关",
+    "开关 - 蓝图渲染",
+    "开关 - 投影渲染",
+    "蓝图渲染",
+    "投影渲染"
+  ],
+  "litematica::142::enableSchematicEntityHitboxes": [
+    "开关 - 蓝图实体判定箱",
+    "开关 - 投影实体判定箱",
+    "蓝图实体判定箱",
+    "投影实体判定箱"
+  ],
+  "litematica::143::enableSchematicFakeLighting": [
+    "启用蓝图模拟光照",
+    "启用投影模拟光照"
+  ],
+  "litematica::151::renderAOModernEnable": [
+    "现代环境光遮蔽处理器"
+  ],
+  "litematica::152::renderAreaSelectionBoxSides": [
+    "渲染 - 选区框侧面",
+    "区域选择框侧面",
+    "选区框侧面"
+  ],
+  "litematica::153::renderBlocksAsTranslucent": [
+    "方块半透明化"
+  ],
+  "litematica::154::renderEnableTranslucentResorting": [
+    "启用半透明层排序"
+  ],
+  "litematica::155::renderCollidingSchematicBlocks": [
+    "渲染 - 冲突的蓝图方块",
+    "渲染 - 冲突的投影方块",
+    "冲突的蓝图方块",
+    "冲突的投影方块"
+  ],
+  "litematica::157::renderErrorMarkerSides": [
+    "错误标记侧面"
+  ],
+  "litematica::159::renderPlacementBoxSides": [
+    "放置框侧面"
+  ],
+  "litematica::160::renderPlacementEnclosingBox": [
+    "放置包围框"
+  ],
+  "litematica::161::renderPlacementEnclosingBoxSides": [
+    "放置包围框侧面"
+  ],
+  "litematica::162::renderSchematicEntities": [
+    "渲染 - 蓝图中的实体",
+    "渲染 - 投影中的实体",
+    "蓝图中的实体",
+    "投影中的实体"
+  ],
+  "litematica::163::renderSchematicTileEntities": [
+    "渲染 - 蓝图中的方块实体",
+    "渲染 - 投影中的方块实体",
+    "蓝图中的方块实体",
+    "投影中的方块实体"
+  ],
+  "litematica::164::renderTranslucentBlockInnerSides": [
+    "半透明方块内部面"
+  ],
+  "litematica::165::schematicOverlayEnableOutlines": [
+    "蓝图显示- 启用轮廓线",
+    "投影显示- 启用轮廓线",
+    "蓝图显示- 启用边框"
+  ],
+  "litematica::166::schematicOverlayEnableSides": [
+    "蓝图显示 - 启用侧面渲染",
+    "投影显示 - 启用侧面渲染"
+  ],
+  "litematica::167::schematicOverlayModelOutline": [
+    "蓝图显示 - 模型轮廓线",
+    "投影显示 - 模型轮廓线",
+    "蓝图显示 - 模型边框"
+  ],
+  "litematica::168::schematicOverlayModelSides": [
+    "蓝图显示 - 模型侧面",
+    "投影显示 - 模型侧面"
+  ],
+  "litematica::169::schematicOverlayOutlineWidth": [
+    "蓝图边框粗细",
+    "蓝图轮廓线宽度",
+    "蓝图显示 - 轮廓线宽度",
+    "投影显示 - 轮廓线宽度",
+    "蓝图显示 - 边框宽度"
+  ],
+  "litematica::170::schematicOverlayOutlineWidthThrough": [
+    "透视蓝图边框粗细",
+    "蓝图显示 - 穿透方块轮廓线宽度",
+    "投影显示 - 穿透方块轮廓线宽度",
+    "蓝图显示 - 穿透方块边框宽度"
+  ],
+  "litematica::171::schematicOverlayRenderThroughBlocks": [
+    "蓝图透视高亮",
+    "穿墙显示蓝图覆盖层",
+    "蓝图显示 - 穿透方块渲染",
+    "投影显示 - 穿透方块渲染"
+  ],
+  "litematica::172::schematicOverlayTypeDiffBlock": [
+    "蓝图差异方块覆盖类型",
+    "投影差异方块覆盖类型"
+  ],
+  "litematica::173::schematicOverlayTypeExtra": [
+    "蓝图显示 - 多余方块类型",
+    "投影显示 - 多余方块类型"
+  ],
+  "litematica::174::schematicOverlayTypeMissing": [
+    "蓝图显示 - 缺失方块类型",
+    "投影显示 - 缺失方块类型"
+  ],
+  "litematica::175::schematicOverlayTypeWrongBlock": [
+    "蓝图显示 - 错误方块类型",
+    "投影显示 - 错误方块类型"
+  ],
+  "litematica::176::schematicOverlayTypeWrongState": [
+    "蓝图显示 - 错误方块状态",
+    "投影显示 - 错误方块状态"
+  ],
+  "litematica::177::addSelectionBox": [
+    "新建选区",
+    "添加子选区"
+  ],
+  "litematica::178::cloneSelection": [
+    "复制选区",
+    "克隆区域"
+  ],
+  "litematica::179::deleteSelectionBox": [
+    "删除选区",
+    "移除子选区"
+  ],
+  "litematica::180::easyPlaceUseKey": [
+    "轻松放置按键",
+    "辅助放置快捷键"
+  ],
+  "litematica::181::easyPlaceFirst": [
+    "优先放置近处方块"
+  ],
+  "litematica::182::easyPlaceToggle": [
+    "切换轻松放置",
+    "轻松放置快捷键"
+  ],
+  "litematica::186::layerModeNext": [
+    "下一个渲染层模式"
+  ],
+  "litematica::187::layerModePrevious": [
+    "上一个渲染层模式"
+  ],
+  "litematica::188::layerNext": [
+    "下一层",
+    "增加渲染层"
+  ],
+  "litematica::189::layerPrevious": [
+    "上一层",
+    "减少渲染层"
+  ],
+  "litematica::190::layerSetHere": [
+    "渲染层设为脚下",
+    "当前高度层"
+  ],
+  "litematica::193::moveEntireSelection": [
+    "移动选区",
+    "整体移动区域"
+  ],
+  "litematica::194::openGuiAreaSettings": [
+    "选区设置",
+    "区域设置",
+    "选区设置界面"
+  ],
+  "litematica::195::openGuiLoadedSchematics": [
+    "已加载蓝图",
+    "蓝图列表",
+    "打开 - 已加载蓝图界面",
+    "打开 - 已加载投影界面",
+    "已加载蓝图界面",
+    "已加载投影界面"
+  ],
+  "litematica::196::openGuiMainMenu": [
+    "投影菜单",
+    "蓝图主菜单",
+    "主菜单界面"
+  ],
+  "litematica::197::openGuiMaterialList": [
+    "材料清单",
+    "查看缺少材料",
+    "统计材料",
+    "打开 - 材料清单界面",
+    "材料列表界面",
+    "材料清单界面"
+  ],
+  "litematica::198::openGuiPlacementSettings": [
+    "蓝图放置设置",
+    "投影位置设置",
+    "放置设置界面"
+  ],
+  "litematica::199::openGuiSchematicPlacements": [
+    "蓝图放置列表",
+    "投影放置管理",
+    "打开 - 蓝图放置界面",
+    "打开 - 投影放置界面",
+    "蓝图放置界面",
+    "投影放置界面"
+  ],
+  "litematica::200::openGuiSchematicProjects": [
+    "蓝图项目",
+    "工程管理",
+    "打开 - 蓝图项目界面",
+    "打开 - 投影项目界面",
+    "蓝图项目界面",
+    "投影项目界面"
+  ],
+  "litematica::201::openGuiSchematicVerifier": [
+    "蓝图校验",
+    "检查搭建错误",
+    "查漏补缺",
+    "打开 - 蓝图验证器界面",
+    "打开 - 投影验证器界面",
+    "蓝图验证器界面",
+    "投影验证器界面"
+  ],
+  "litematica::202::openGuiSelectionManager": [
+    "选区管理",
+    "区域管理",
+    "选区管理器界面"
+  ],
+  "litematica::203::openGuiSettings": [
+    "投影配置",
+    "投影设置"
+  ],
+  "litematica::210::rerenderSchematic": [
+    "刷新蓝图",
+    "刷新投影",
+    "重新渲染蓝图",
+    "重新渲染投影"
+  ],
+  "litematica::211::saveAreaAsInMemorySchematic": [
+    "临时蓝图",
+    "保存到内存",
+    "保存选区为内存蓝图",
+    "保存选区为内存投影"
+  ],
+  "litematica::212::saveAreaAsSchematicToFile": [
+    "保存蓝图",
+    "导出蓝图",
+    "选区另存为蓝图",
+    "保存选区为蓝图文件",
+    "保存选区为投影文件"
+  ],
+  "litematica::213::schematicEditBreakAllExcept": [
+    "蓝图编辑 - 破坏除此之外所有方块",
+    "投影编辑 - 破坏除此之外所有方块"
+  ],
+  "litematica::214::schematicEditBreakPlaceAll": [
+    "蓝图编辑 - 破坏或添加所有此方块",
+    "投影编辑 - 破坏或添加所有此方块"
+  ],
+  "litematica::215::schematicEditBreakPlaceDirection": [
+    "蓝图编辑 - 破坏或添加一列方块",
+    "投影编辑 - 破坏或添加一列方块"
+  ],
+  "litematica::216::schematicEditReplaceAll": [
+    "蓝图批量替换",
+    "替换全部同类方块",
+    "蓝图编辑 - 替换所有此方块",
+    "投影编辑 - 替换所有此方块"
+  ],
+  "litematica::217::schematicEditReplaceBlock": [
+    "蓝图替换方块",
+    "投影编辑替换",
+    "蓝图编辑 - 替换方块",
+    "投影编辑 - 替换方块"
+  ],
+  "litematica::218::schematicEditReplaceDirection": [
+    "蓝图编辑 - 替换指定的一列",
+    "投影编辑 - 替换指定的一列"
+  ],
+  "litematica::219::schematicEditReplaceSelection": [
+    "蓝图选区替换",
+    "蓝图编辑 - 替换选区",
+    "投影编辑 - 替换选区"
+  ],
+  "litematica::220::schematicPlacementRotation": [
+    "蓝图旋转",
+    "旋转投影",
+    "投影旋转"
+  ],
+  "litematica::221::schematicPlacementMirror": [
+    "蓝图镜像",
+    "镜像投影",
+    "投影镜像"
+  ],
+  "litematica::223::schematicVersionCycleModifier": [
+    "蓝图版本循环修饰键",
+    "投影版本循环修饰键"
+  ],
+  "litematica::224::schematicVersionCycleNext": [
+    "下一蓝图版本",
+    "下一投影版本"
+  ],
+  "litematica::225::schematicVersionCyclePrevious": [
+    "上一蓝图版本",
+    "上一投影版本"
+  ],
+  "litematica::227::selectionGrow": [
+    "扩大选区"
+  ],
+  "litematica::231::selectionShrink": [
+    "缩小选区"
+  ],
+  "litematica::232::setAreaOrigin": [
+    "选区原点",
+    "设置原点"
+  ],
+  "litematica::233::setSelectionBoxPosition1": [
+    "设置选区起点",
+    "角点一位置"
+  ],
+  "litematica::234::setSelectionBoxPosition2": [
+    "设置选区终点",
+    "角点二位置"
+  ],
+  "litematica::235::toggleAllRendering": [
+    "切换全部渲染",
+    "投影总开关快捷键",
+    "全部渲染状态"
+  ],
+  "litematica::236::toggleAreaSelectionBoxesRendering": [
+    "切换 - 选区框渲染",
+    "区域选择框渲染",
+    "选区框渲染"
+  ],
+  "litematica::237::toggleSchematicRendering": [
+    "切换蓝图显示",
+    "隐藏蓝图快捷键",
+    "切换 - 蓝图渲染",
+    "切换 - 投影渲染",
+    "蓝图渲染",
+    "投影渲染"
+  ],
+  "litematica::238::toggleInfoOverlayRendering": [
+    "信息显示渲染"
+  ],
+  "litematica::239::toggleOverlayRendering": [
+    "显示渲染"
+  ],
+  "litematica::240::toggleOverlayOutlineRendering": [
+    "切换 - 显示边框渲染",
+    "显示轮廓线渲染",
+    "显示边框渲染"
+  ],
+  "litematica::241::toggleOverlaySideRendering": [
+    "侧面显示渲染"
+  ],
+  "litematica::242::togglePlacementBoxesRendering": [
+    "放置框渲染"
+  ],
+  "litematica::243::togglePlacementRestriction": [
+    "切换放置限制",
+    "放置限制快捷键",
+    "放置限制模式"
+  ],
+  "litematica::244::toggleSchematicBlockRendering": [
+    "切换 - 蓝图方块渲染",
+    "切换 - 投影方块渲染",
+    "蓝图方块渲染",
+    "投影方块渲染"
+  ],
+  "litematica::245::toggleSignTextPaste": [
+    "告示牌文本自动粘贴"
+  ],
+  "litematica::246::toggleTranslucentRendering": [
+    "半透明渲染"
+  ],
+  "litematica::247::toggleVerifierOverlayRendering": [
+    "验证器显示渲染"
+  ],
+  "litematica::248::toolEnabledToggle": [
+    "切换投影工具",
+    "工具开关快捷键",
+    "工具启用状态"
+  ],
+  "litematica::249::toolPlaceCorner1": [
+    "选择第一个角点",
+    "选区起点"
+  ],
+  "litematica::250::toolPlaceCorner2": [
+    "选择第二个角点",
+    "选区终点"
+  ],
+  "litematica::254::unloadCurrentSchematic": [
+    "卸载蓝图",
+    "移除当前投影",
+    "卸载当前蓝图",
+    "卸载当前投影"
+  ],
+  "litematica-printer::37::切换模式": [
+    "打印模式切换快捷键"
+  ],
+  "litematica-printer::1::挖掘": [
+    "自动挖掘",
+    "挖掘开关"
+  ],
+  "litematica-printer::2::挖掘模式限制器": [
+    "限制挖掘模式"
+  ],
+  "litematica-printer::3::挖掘模式限制": [
+    "挖掘模式限制范围"
+  ],
+  "litematica-printer::4::挖掘白名单": [
+    "允许挖掘的方块",
+    "挖掘允许列表"
+  ],
+  "litematica-printer::5::挖掘黑名单": [
+    "禁止挖掘的方块",
+    "挖掘禁止列表"
+  ],
+  "litematica-printer::6::打印机开关": [
+    "自动打印开关",
+    "开启打印机"
+  ],
+  "litematica-printer::7::同步时检查背包": [
+    "同步背包检查"
+  ],
+  "litematica-printer::8::破基岩": [
+    "破坏基岩"
+  ],
+  "litematica-printer::9::替换": [
+    "打印替换模式"
+  ],
+  "litematica-printer::10::打印含水方块": [
+    "含水方块打印",
+    "水浸方块打印"
+  ],
+  "litematica-printer::11::轻松放置模式": [
+    "打印机轻松放置",
+    "打印辅助放置"
+  ],
+  "litematica-printer::12::打印机占用时间": [
+    "打印时间预算",
+    "打印耗时上限"
+  ],
+  "litematica-printer::13::打印机工作间隔": [
+    "打印间隔",
+    "打印速度"
+  ],
+  "litematica-printer::14::打印机工作半径": [
+    "打印范围",
+    "打印距离"
+  ],
+  "litematica-printer::15::放置冷却": [
+    "放置间隔",
+    "方块放置延迟"
+  ],
+  "litematica-printer::16::半径模式": [
+    "打印半径模式",
+    "打印范围模式"
+  ],
+  "litematica-printer::17::模式切换": [
+    "打印模式选择"
+  ],
+  "litematica-printer::18::多模阻断": [
+    "多模式阻断"
+  ],
+  "litematica-printer::19::渲染层数限制": [
+    "打印层数限制",
+    "按渲染层打印"
+  ],
+  "litematica-printer::20::替换方块名单": [
+    "打印替换列表",
+    "替换方块列表"
+  ],
+  "litematica-printer::21::基岩模式白名单": [
+    "破基岩白名单"
+  ],
+  "litematica-printer::22::跳过放置": [
+    "忽略方块放置",
+    "跳过打印"
+  ],
+  "litematica-printer::23::跳过放置名单": [
+    "跳过方块列表",
+    "打印忽略列表"
+  ],
+  "litematica-printer::24::侦测器放置检测": [
+    "侦测器检测",
+    "观察者放置检测"
+  ],
+  "litematica-printer::25::有序存放": [
+    "物品有序存放"
+  ],
+  "litematica-printer::26::精准放置": [
+    "精确放置",
+    "准确放置"
+  ],
+  "litematica-printer::27::强制潜行": [
+    "强制蹲下",
+    "放置时潜行"
+  ],
+  "litematica-printer::28::凭空放置": [
+    "空中放置",
+    "无支撑放置"
+  ],
+  "litematica-printer::29::破坏错误方块": [
+    "清除错误方块",
+    "挖掉放错方块"
+  ],
+  "litematica-printer::30::覆盖列表方块": [
+    "覆盖名单中的方块"
+  ],
+  "litematica-printer::31::可覆盖方块": [
+    "允许覆盖的方块",
+    "覆盖白名单"
+  ],
+  "litematica-printer::32::原木去皮": [
+    "原木剥皮",
+    "木头去皮"
+  ],
+  "litematica-printer::33::打印": [
+    "打印快捷键",
+    "开始打印"
+  ],
+  "litematica-printer::34::关闭全部模式": [
+    "停用所有打印模式",
+    "全部停止"
+  ],
+  "litematica-printer::35::容器同步": [
+    "箱子同步",
+    "同步容器"
+  ],
+  "litematica-printer::36::容器同步与打印机添加库存高亮颜色": [
+    "打印补充库存高亮颜色",
+    "容器同步高亮颜色"
+  ]
+}
