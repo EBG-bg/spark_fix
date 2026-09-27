@@ -58,8 +58,11 @@ public final class ReiClientTransferFallback {
         List<Integer> inputIndices = resolveIndices(menu, player, inputAccessors);
         List<Integer> inventoryIndices = resolveIndices(menu, player, inventoryAccessors);
         if (!validIndices(menu, inputIndices)
-                || !validIndices(menu, inventoryIndices)
-                || inputIndices.size() < inputs.size()) {
+                || !validIndices(menu, inventoryIndices)) {
+            return failed("error.spark_fix.rei_transfer.unsupported");
+        }
+        List<Integer> targetIndices = targetSlots(inputs, inputIndices);
+        if (targetIndices == null) {
             return failed("error.spark_fix.rei_transfer.unsupported");
         }
         if (hasOverlap(inputIndices, inventoryIndices)) {
@@ -75,9 +78,12 @@ public final class ReiClientTransferFallback {
             return failure(session, "error.spark_fix.rei_transfer.inventory_full");
         }
 
-        TransferPlan plan = createPlan(menu, inputs, inventoryAccessors, inputIndices, context.isStackedCrafting());
+        TransferPlan plan = createPlan(menu, inputs, inventoryAccessors, targetIndices, context.isStackedCrafting());
         if (plan == null) {
             return TransferHandler.Result.createFailed(Component.translatable("error.rei.not.enough.materials"));
+        }
+        if (plan.placements().isEmpty()) {
+            return TransferHandler.Result.createSuccessful();
         }
 
         try {
@@ -104,7 +110,7 @@ public final class ReiClientTransferFallback {
             AbstractContainerMenu menu,
             List<InputIngredient<ItemStack>> inputs,
             List<SlotAccessor> inventorySlots,
-            List<Integer> inputIndices,
+            List<Integer> targetIndices,
             boolean stacked
     ) {
         ItemRecipeFinder finder = createFinder(inventorySlots);
@@ -121,10 +127,10 @@ public final class ReiClientTransferFallback {
         }
 
         int slotLimit = craftCount;
-        for (int index = 0; index < selected.size() && index < inputIndices.size(); index++) {
+        for (int index = 0; index < selected.size() && index < targetIndices.size(); index++) {
             ItemStack stack = selected.get(index);
             if (!stack.isEmpty()) {
-                Slot target = menu.getSlot(inputIndices.get(index));
+                Slot target = menu.getSlot(targetIndices.get(index));
                 if (!target.mayPlace(stack)) {
                     return null;
                 }
@@ -143,13 +149,24 @@ public final class ReiClientTransferFallback {
         }
 
         List<Placement> placements = new ArrayList<>();
-        for (int index = 0; index < selected.size() && index < inputIndices.size(); index++) {
+        for (int index = 0; index < selected.size() && index < targetIndices.size(); index++) {
             ItemStack stack = selected.get(index);
             if (!stack.isEmpty()) {
-                placements.add(new Placement(inputIndices.get(index), stack.copy(), craftCount));
+                placements.add(new Placement(targetIndices.get(index), stack.copy(), craftCount));
             }
         }
         return new TransferPlan(placements);
+    }
+
+    private static List<Integer> targetSlots(List<InputIngredient<ItemStack>> inputs, List<Integer> inputIndices) {
+        List<Integer> targets = new ArrayList<>(inputs.size());
+        Set<Integer> used = new HashSet<>();
+        for (InputIngredient<ItemStack> input : inputs) {
+            int index = input.getIndex();
+            if (index < 0 || index >= inputIndices.size() || !used.add(index)) return null;
+            targets.add(inputIndices.get(index));
+        }
+        return targets;
     }
 
     private static List<ItemStack> selectIngredients(
@@ -174,130 +191,89 @@ public final class ReiClientTransferFallback {
                 return false;
             }
 
-            int sourceIndex = findMatchingSource(menu, inventoryIndices, placement.stack());
+            int sourceIndex = findMatchingSource(menu, inventoryIndices, placement.stack(), remaining);
             if (sourceIndex < 0) {
                 return false;
             }
 
             Slot source = menu.getSlot(sourceIndex);
             ItemStack sourceBefore = source.getItem().copy();
-            if (!session.click(sourceIndex, 0, ContainerInput.PICKUP)) {
+            int availableSpace = target.getMaxStackSize(sourceBefore)
+                    - (target.getItem().isEmpty() ? 0 : target.getItem().getCount());
+            int toPlace = Math.min(remaining, Math.min(sourceBefore.getCount(), availableSpace));
+            if (toPlace < 1 || !target.mayPlace(sourceBefore)
+                    || (!target.getItem().isEmpty()
+                        && !ItemStack.isSameItemSameComponents(target.getItem(), sourceBefore))) {
                 return false;
             }
+            int pickupButton = (sourceBefore.getCount() + 1) / 2 >= toPlace ? 1 : 0;
+            if (!session.click(sourceIndex, pickupButton, ContainerInput.PICKUP)) return false;
             ItemStack carried = menu.getCarried();
             if (carried.isEmpty() || !ItemStack.isSameItemSameComponents(carried, placement.stack())) {
                 return false;
             }
-            if (!source.getItem().isEmpty() || sourceBefore.isEmpty()) {
+            if (carried.getCount() != (pickupButton == 1
+                    ? (sourceBefore.getCount() + 1) / 2 : sourceBefore.getCount())) {
                 return false;
             }
 
             ItemStack targetBefore = target.getItem().copy();
-            if (!target.mayPlace(carried)) {
-                return false;
-            }
-            if (!targetBefore.isEmpty()
-                    && !ItemStack.isSameItemSameComponents(targetBefore, carried)) {
-                return false;
-            }
-
-            int capacity = target.getMaxStackSize(carried);
             int targetCount = targetBefore.isEmpty() ? 0 : targetBefore.getCount();
-            int availableSpace = capacity - targetCount;
-            int toPlace = Math.min(remaining, Math.min(carried.getCount(), availableSpace));
-            if (toPlace < 1) {
-                return false;
-            }
-
-            int placed;
-            if (targetBefore.isEmpty() && toPlace == carried.getCount() && capacity >= carried.getCount()) {
-                if (!session.click(placement.targetSlot(), 0, ContainerInput.PICKUP)) {
-                    return false;
+            int excess = carried.getCount() - toPlace;
+            if (excess <= toPlace) {
+                for (int count = 0; count < excess; count++) {
+                    if (!session.click(sourceIndex, 1, ContainerInput.PICKUP)) return false;
                 }
-                ItemStack targetAfter = target.getItem();
-                if (targetAfter.isEmpty()
-                        || !ItemStack.isSameItemSameComponents(targetAfter, carried)
-                        || targetAfter.getCount() != targetCount + toPlace
-                        || !menu.getCarried().isEmpty()) {
-                    return false;
-                }
-                placed = targetAfter.getCount() - targetCount;
+                if (menu.getCarried().getCount() != toPlace
+                        || !session.click(placement.targetSlot(), 0, ContainerInput.PICKUP)) return false;
             } else {
-                placed = 0;
                 for (int count = 0; count < toPlace; count++) {
-                    ItemStack targetBeforeClick = target.getItem().copy();
-                    ItemStack carriedBeforeClick = menu.getCarried().copy();
-                    if (!session.click(placement.targetSlot(), 1, ContainerInput.PICKUP)) {
-                        return false;
-                    }
-                    ItemStack targetAfterClick = target.getItem();
-                    ItemStack carriedAfterClick = menu.getCarried();
-                    if (!validSinglePlacement(
-                            targetBeforeClick,
-                            targetAfterClick,
-                            carriedBeforeClick,
-                            carriedAfterClick,
-                            placement.stack()
-                    )) {
-                        return false;
-                    }
-                    placed++;
+                    if (!session.click(placement.targetSlot(), 1, ContainerInput.PICKUP)) return false;
                 }
-            }
-
-            if (placed < 1 || placed > remaining) {
-                return false;
-            }
-            if (!menu.getCarried().isEmpty()) {
-                ItemStack carriedBeforeReturn = menu.getCarried().copy();
-                if (!session.click(sourceIndex, 0, ContainerInput.PICKUP)) {
-                    return false;
-                }
-                ItemStack sourceAfterReturn = source.getItem();
                 if (!menu.getCarried().isEmpty()
-                        || sourceAfterReturn.isEmpty()
-                        || !ItemStack.isSameItemSameComponents(sourceAfterReturn, placement.stack())
-                        || sourceAfterReturn.getCount() < carriedBeforeReturn.getCount()) {
-                    return false;
-                }
+                        && !session.click(sourceIndex, 0, ContainerInput.PICKUP)) return false;
             }
-            remaining -= placed;
+            ItemStack targetAfter = target.getItem();
+            ItemStack sourceAfter = source.getItem();
+            if (!menu.getCarried().isEmpty()
+                    || targetAfter.getCount() != targetCount + toPlace
+                    || !ItemStack.isSameItemSameComponents(targetAfter, placement.stack())
+                    || sourceAfter.getCount() != sourceBefore.getCount() - toPlace
+                    || (!sourceAfter.isEmpty()
+                        && !ItemStack.isSameItemSameComponents(sourceAfter, sourceBefore))) return false;
+            remaining -= toPlace;
         }
         return true;
-    }
-
-    private static boolean validSinglePlacement(
-            ItemStack targetBefore,
-            ItemStack targetAfter,
-            ItemStack carriedBefore,
-            ItemStack carriedAfter,
-            ItemStack wanted
-    ) {
-        if (targetAfter.isEmpty()
-                || !ItemStack.isSameItemSameComponents(targetAfter, wanted)
-                || targetAfter.getCount() != targetBefore.getCount() + 1
-                || carriedBefore.isEmpty()) {
-            return false;
-        }
-        if (carriedAfter.isEmpty()) {
-            return carriedBefore.getCount() == 1;
-        }
-        return ItemStack.isSameItemSameComponents(carriedAfter, wanted)
-                && carriedAfter.getCount() == carriedBefore.getCount() - 1;
     }
 
     private static int findMatchingSource(
             AbstractContainerMenu menu,
             List<Integer> inventoryIndices,
-            ItemStack wanted
+            ItemStack wanted,
+            int remaining
     ) {
+        int bestIndex = -1;
+        int bestCost = Integer.MAX_VALUE;
+        int largestShortStack = 0;
         for (int slotIndex : inventoryIndices) {
             ItemStack stack = menu.getSlot(slotIndex).getItem();
             if (!stack.isEmpty() && ItemStack.isSameItemSameComponents(stack, wanted)) {
-                return slotIndex;
+                int count = stack.getCount();
+                if (count >= remaining) {
+                    int picked = (count + 1) / 2 >= remaining ? (count + 1) / 2 : count;
+                    int excess = picked - remaining;
+                    int cost = 1 + (excess <= remaining ? excess + 1 : remaining + 1);
+                    if (cost < bestCost) {
+                        bestIndex = slotIndex;
+                        bestCost = cost;
+                    }
+                } else if (bestCost == Integer.MAX_VALUE && count > largestShortStack) {
+                    bestIndex = slotIndex;
+                    largestShortStack = count;
+                }
             }
         }
-        return -1;
+        return bestIndex;
     }
 
     private static boolean parkCursor(
