@@ -2,7 +2,7 @@
 
 面向 **Minecraft 26.2 Fabric 客户端**的修复模组，源自 `warmaislandfix`，最初用于 [沃玛岛服务器](https://www.warma.fans/mc)。未触发问题时尽量保持原版和原模组行为。
 
-当前源码版本为 **2.1.0（尚未发布）**，下文功能与配置以该版本为准；公开下载仍为 **2.0.1**。
+当前发布版本为 **2.1.0**。
 
 ## 已包含功能
 
@@ -25,7 +25,7 @@
 
 ## 安装
 
-[下载 spark_fix-2.0.1.jar](https://github.com/EBG-bg/spark_fix/releases/download/v2.0.1/spark_fix-2.0.1.jar) · [发布页](https://github.com/EBG-bg/spark_fix/releases/tag/v2.0.1)
+[下载 spark_fix-2.1.0.jar](https://github.com/EBG-bg/spark_fix/releases/download/v2.1.0/spark_fix-2.1.0.jar) · [发布页](https://github.com/EBG-bg/spark_fix/releases/tag/v2.1.0)
 
 1. 使用 Java 25，安装 Minecraft 26.2、Fabric Loader 0.19.3 或更高版本，以及对应版本的 Fabric API。
 2. 将 JAR 放入客户端 `mods` 目录；停用旧的 `warmaislandfix`、独立版 `adofaigo` 和 `REI Recipe Bridge`。
