@@ -6,6 +6,7 @@ import com.sun.jna.ptr.IntByReference;
 import com.sun.jna.platform.win32.User32;
 import com.sun.jna.platform.win32.WinDef.HWND;
 import com.sun.jna.platform.win32.WinUser;
+import dev.codex.spark_fix.SparkFixConfig;
 import java.io.IOException;
 import java.nio.charset.Charset;
 import java.nio.file.Files;
@@ -19,28 +20,88 @@ import java.util.concurrent.atomic.AtomicReference;
 /** Starts ADOFAI through Steam and restores its window to the foreground on Windows. */
 public final class SteamLauncher {
     private static final String GAME_ID = "977950";
+    private static Thread launchThread;
+    private static volatile LaunchStatus launchStatus = new LaunchStatus(Stage.IDLE, 0);
+
+    public enum Stage { IDLE, COUNTDOWN, WAITING, STARTED, FAILED, TIMED_OUT, UNSUPPORTED }
+
+    /** The deadline uses real time, independent of Minecraft's pause and tick rate. */
+    public record LaunchStatus(Stage stage, long deadlineNanos) { }
     private SteamLauncher() {
     }
 
-    public static void launchOrFocus() {
-        Thread.startVirtualThread(() -> {
+    public static synchronized void launchOrFocus() {
+        if (launchThread != null) return;
+        int delay = SparkFixConfig.adofaigoLaunchDelaySeconds();
+        long launchAt = System.nanoTime() + delay * 1_000_000_000L;
+        launchStatus = new LaunchStatus(delay > 0 ? Stage.COUNTDOWN : Stage.WAITING, launchAt);
+        launchThread = Thread.ofVirtual().unstarted(() -> {
             try {
-                Optional<ProcessHandle> game = findGameProcess();
-                if (game.isEmpty()) {
-                    launchFromSteam();
-                    game = waitForGame(60_000L);
+                if (!System.getProperty("os.name", "").toLowerCase(Locale.ROOT).startsWith("windows")) {
+                    finish(Stage.UNSUPPORTED);
+                    return;
                 }
-                game.ifPresent(SteamLauncher::focusWindow);
-            } catch (Exception exception) {
+                while (System.nanoTime() < launchAt) {
+                    Thread.sleep(Math.min(100L, Math.max(1L, (launchAt - System.nanoTime()) / 1_000_000L)));
+                }
+                if (!updatePendingStatus(Stage.WAITING, 0)) return;
+                Optional<ProcessHandle> game = findGameProcess();
+                if (game.isEmpty()) launchFromSteam();
+                long timeout = System.nanoTime() + 120_000_000_000L;
+                while (System.nanoTime() < timeout) {
+                    game = game.filter(ProcessHandle::isAlive).or(SteamLauncher::findGameProcess);
+                    if (game.isPresent()) {
+                        Optional<HWND> window = findMainWindow(game.get().pid());
+                        if (window.isPresent()) {
+                            finish(Stage.STARTED);
+                            focusWindow(window.get());
+                            return;
+                        }
+                    }
+                    Thread.sleep(250L);
+                }
+                finish(Stage.TIMED_OUT);
+            } catch (InterruptedException exception) {
+                Thread.currentThread().interrupt();
+            } catch (Exception | LinkageError exception) {
+                finish(Stage.FAILED);
                 AdofoigoMod.LOGGER.warn("Could not start or focus ADOFAI", exception);
+            } finally {
+                synchronized (SteamLauncher.class) {
+                    if (launchThread == Thread.currentThread()) launchThread = null;
+                }
             }
         });
+        launchThread.start();
+    }
+
+    public static synchronized void cancelPendingLaunch() {
+        Thread pending = launchThread;
+        launchThread = null;
+        launchStatus = new LaunchStatus(Stage.IDLE, 0);
+        if (pending != null) pending.interrupt();
+    }
+
+    public static LaunchStatus status() { return launchStatus; }
+
+    private static void finish(Stage stage) {
+        updatePendingStatus(stage, System.nanoTime()
+                + (stage == Stage.STARTED ? 2_000_000_000L : 5_000_000_000L));
+    }
+
+    private static synchronized boolean updatePendingStatus(Stage stage, long deadline) {
+        // A canceled worker must not overwrite the state of a subsequent launch.
+        if (launchThread != Thread.currentThread() || launchThread.isInterrupted()) return false;
+        launchStatus = new LaunchStatus(stage, deadline);
+        return true;
     }
 
     private static Optional<ProcessHandle> findGameProcess() {
-        return ProcessHandle.allProcesses()
+        try (var processes = ProcessHandle.allProcesses()) {
+            return processes
                 .filter(process -> process.info().command().map(SteamLauncher::looksLikeGame).orElse(false))
                 .findFirst();
+        }
     }
 
     private static boolean looksLikeGame(String executablePath) {
@@ -56,20 +117,14 @@ public final class SteamLauncher {
                 || value.contains("a dance of fire and ice");
     }
 
-    private static Optional<ProcessHandle> waitForGame(long timeoutMillis) throws InterruptedException {
-        long deadline = System.nanoTime() + timeoutMillis * 1_000_000L;
-        Optional<ProcessHandle> game;
-        while (System.nanoTime() < deadline && (game = findGameProcess()).isEmpty()) {
-            Thread.sleep(500L);
-        }
-        return findGameProcess();
-    }
-
     private static void launchFromSteam() throws IOException {
         Path steam = findSteamExecutable().orElseThrow(
                 () -> new IOException("Steam.exe was not found in the running processes, registry, or default folders"));
         AdofoigoMod.LOGGER.info("Launching ADOFAI through {}", steam);
-        new ProcessBuilder(steam.toString(), "-applaunch", GAME_ID).start();
+        synchronized (SteamLauncher.class) {
+            if (launchThread != Thread.currentThread() || launchThread.isInterrupted()) return;
+            new ProcessBuilder(steam.toString(), "-applaunch", GAME_ID).start();
+        }
     }
 
     private static Optional<Path> findSteamExecutable() {
@@ -150,38 +205,17 @@ public final class SteamLauncher {
                 && Files.isRegularFile(path);
     }
 
-    private static void focusWindow(ProcessHandle process) {
-        if (!System.getProperty("os.name", "").toLowerCase(Locale.ROOT).contains("win")) {
-            return;
-        }
+    private static synchronized void focusWindow(HWND window) {
+        if (launchThread != Thread.currentThread() || launchThread.isInterrupted()) return;
         try {
-            HWND window = waitForMainWindow(process.pid(), 30_000L).orElse(null);
-            if (window == null) {
-                AdofoigoMod.LOGGER.debug("ADOFAI process {} did not expose a visible window", process.pid());
-                return;
-            }
             User32.INSTANCE.ShowWindow(window, WinUser.SW_RESTORE);
             User32.INSTANCE.BringWindowToTop(window);
             if (!User32.INSTANCE.SetForegroundWindow(window)) {
-                AdofoigoMod.LOGGER.debug("Windows declined the request to foreground ADOFAI process {}", process.pid());
+                AdofoigoMod.LOGGER.debug("Windows declined the request to foreground ADOFAI");
             }
         } catch (RuntimeException exception) {
             AdofoigoMod.LOGGER.debug("Could not focus ADOFAI window", exception);
         }
-    }
-
-    private static Optional<HWND> waitForMainWindow(long processId, long timeoutMillis) {
-        long deadline = System.nanoTime() + timeoutMillis * 1_000_000L;
-        Optional<HWND> window;
-        while (System.nanoTime() < deadline && (window = findMainWindow(processId)).isEmpty()) {
-            try {
-                Thread.sleep(250L);
-            } catch (InterruptedException exception) {
-                Thread.currentThread().interrupt();
-                return Optional.empty();
-            }
-        }
-        return findMainWindow(processId);
     }
 
     private static Optional<HWND> findMainWindow(long processId) {

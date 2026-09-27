@@ -213,7 +213,7 @@ final class OwoIntegrationSettingsScreen extends BaseOwoScreen<FlowLayout> {
         row.verticalAlignment(VerticalAlignment.CENTER);
         FlowLayout text = UIContainers.verticalFlow(compact ? Sizing.fill() : Sizing.expand(), Sizing.content());
         text.gap(5);
-        LabelComponent nameLabel = label(Component.literal(name), 0xFFFFFFFF);
+        LabelComponent nameLabel = label(Component.literal(name.equals("adofaigo") ? "adofai" : name), 0xFFFFFFFF);
         nameLabel.maxWidth(Math.max(80, panelWidth - (compact ? 56 : 206)));
         text.child(nameLabel);
         LabelComponent summary = label(Component.translatable(description), IntegrationSettingsStyle.MUTED);
@@ -248,7 +248,7 @@ final class OwoIntegrationSettingsScreen extends BaseOwoScreen<FlowLayout> {
                             IntegrationSettingsStyle.MODULE_CARD, IntegrationSettingsStyle.MODULE_CARD_HOVER,
                             cardFade.sample(hovered)));
         });
-        button.tooltip(Component.literal(name + ": ").append(Component.translatable(
+        button.tooltip(Component.literal((name.equals("adofaigo") ? "adofai" : name) + ": ").append(Component.translatable(
                 selected ? "config.spark_fix.on" : "config.spark_fix.off")));
         FlowLayout controls = UIContainers.horizontalFlow(Sizing.content(), Sizing.fixed(24));
         controls.gap(6);

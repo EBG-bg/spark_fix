@@ -16,6 +16,7 @@ import net.minecraft.client.input.MouseButtonEvent;
 import net.minecraft.client.input.PreeditEvent;
 import net.minecraft.client.resources.language.I18n;
 import net.minecraft.network.chat.Component;
+import net.minecraft.util.FormattedCharSequence;
 import org.lwjgl.glfw.GLFW;
 
 import java.util.ArrayList;
@@ -39,6 +40,11 @@ class VanillaLitematicaSettingsScreen extends Screen {
     private final Screen parent;
     private final List<LitematicaConfigDiscovery.DiscoveredGroup> groups;
     private final List<Card> cards = new ArrayList<>();
+    private final List<String> discoveredKeys;
+    private List<Option> cachedOptions;
+    private final Map<String, String> optionSearchText = new LinkedHashMap<>();
+    private final Map<String, String> originalOptionNames = new LinkedHashMap<>();
+    private final Map<String, Component> optionComments = new LinkedHashMap<>();
     private final List<AbstractWidget> contentWidgets = new ArrayList<>();
     private final List<EmptyState> emptyStates = new ArrayList<>();
     private final List<GroupDivider> groupDividers = new ArrayList<>();
@@ -101,6 +107,8 @@ class VanillaLitematicaSettingsScreen extends Screen {
     private boolean layoutDirty;
     private boolean savedOnClose;
     private boolean openingChildScreen;
+    private String infoTooltipKey;
+    private int infoTooltipOffset;
 
     VanillaLitematicaSettingsScreen(Screen parent) {
         super(Component.translatable("config.spark_fix.litematica_section"));
@@ -112,7 +120,7 @@ class VanillaLitematicaSettingsScreen extends Screen {
                     layoutDirty = true;
                 }) : null;
         this.groups = renderLayers == null ? discovered : renderLayers.attach(discovered);
-        List<String> discoveredKeys = discoverOptions().stream().map(Option::key).toList();
+        discoveredKeys = discoverOptions().stream().map(Option::key).toList();
         favoriteOrder.addAll(SparkFixConfig.litematicaFavorites(discoveredKeys));
         settingsOrder.addAll(SparkFixConfig.litematicaSettingsOrder(discoveredKeys));
         litematicaAliases.putAll(SparkFixConfig.litematicaAliases(discoveredKeys));
@@ -131,7 +139,7 @@ class VanillaLitematicaSettingsScreen extends Screen {
         for (Option option : discoverOptions()) {
             List<String> names = new ArrayList<>(litematicaNames.getOrDefault(option.key(), List.of()));
             names.add(option.name());
-            names.add(LitematicaConfigDiscovery.name(option.object()));
+            names.add(originalOptionNames.get(option.key()));
             mainNames.put(option.key(), names);
         }
         return mainNames;
@@ -139,6 +147,7 @@ class VanillaLitematicaSettingsScreen extends Screen {
 
     @Override
     protected void init() {
+        cachedOptions = null;
         clearAddonMenu();
         categories = LitematicaCategories.discover(groups);
         categoryByOption.clear();
@@ -437,33 +446,38 @@ class VanillaLitematicaSettingsScreen extends Screen {
         }
         String normalizedQuery = query == null ? "" : query.trim().toLowerCase(Locale.ROOT);
         if (normalizedQuery.isBlank()) return available;
-        return available.stream().filter(option -> {
-            String aliases = String.join(" ", litematicaAliases.getOrDefault(option.key(), List.of()));
-            String names = String.join(" ", litematicaNames.getOrDefault(option.key(), List.of()));
-            return (option.name() + " " + LitematicaConfigDiscovery.name(option.object()) + " "
-                    + LitematicaConfigDiscovery.stableName(option.object()) + " " + names + " " + aliases + " "
-                    + option.comment() + " " + option.group())
-                    .toLowerCase(Locale.ROOT).contains(normalizedQuery);
-        }).toList();
+        return available.stream().filter(option -> optionSearchText.get(option.key()).contains(normalizedQuery)).toList();
     }
 
     private List<Option> discoverOptions() {
+        if (cachedOptions != null) return cachedOptions;
         List<Option> result = new ArrayList<>();
+        optionSearchText.clear();
+        originalOptionNames.clear();
+        optionComments.clear();
         for (var group : groups) {
             int index = 0;
             for (Object object : group.options()) {
                 String name = LitematicaConfigDiscovery.name(object);
                 if (name.isBlank()) name = object.getClass().getSimpleName();
-                String comment = LitematicaConfigDiscovery.comment(object);
+                Component commentComponent = LitematicaConfigDiscovery.commentComponent(object);
+                String comment = commentComponent.getString();
                 String stableName = LitematicaConfigDiscovery.stableName(object);
                 if (stableName.isBlank()) stableName = name;
                 String key = group.id() + "::" + index++ + "::" + stableName;
                 List<String> customNames = litematicaNames.get(key);
                 String displayName = customNames == null || customNames.isEmpty() ? name : customNames.get(0);
                 result.add(new Option(key, group.id(), object, displayName, comment));
+                originalOptionNames.put(key, name);
+                optionComments.put(key, commentComponent);
+                optionSearchText.put(key, (displayName + " " + name + " " + stableName + " "
+                        + String.join(" ", litematicaNames.getOrDefault(key, List.of())) + " "
+                        + String.join(" ", litematicaAliases.getOrDefault(key, List.of())) + " "
+                        + comment + " " + group.id()).toLowerCase(Locale.ROOT));
             }
         }
-        return result;
+        cachedOptions = List.copyOf(result);
+        return cachedOptions;
     }
 
     private int section(Component label, int y, boolean favorites) {
@@ -675,6 +689,11 @@ class VanillaLitematicaSettingsScreen extends Screen {
         } else if (LitematicaConfigDiscovery.isOptionList(option)) {
             editor = new LitematicaOptionListButton(option, editorWidth);
             editorX = 12;
+        } else if (LitematicaConfigDiscovery.isStringList(option)) {
+            editor = new LitematicaStringListButton(font, option, editorWidth,
+                    () -> openChildScreen(new LitematicaStringListEditorScreen(
+                            this, option, card.option.group(), card.option.name())));
+            editorX = 12;
         } else if (LitematicaConfigDiscovery.isColor(option)) {
             editor = new LitematicaColorButton(font, option, editorWidth,
                     () -> openChildScreen(new LitematicaColorEditorScreen(this, option, card.option.name())));
@@ -783,9 +802,46 @@ class VanillaLitematicaSettingsScreen extends Screen {
     private void addInfoButton(Card card) {
         card.infoButton = addCardIcon(card, card.infoX, card.infoY, SettingsIconButton.Icon.INFO,
                 Component.translatable("config.spark_fix.litematica_option_info", card.option.name()), () -> { });
-        Component comment = LitematicaConfigDiscovery.commentComponent(card.option.object());
+        Component comment = optionComments.get(card.option.key()).copy();
         if (comment.getString().isBlank()) comment = Component.translatable("config.spark_fix.litematica_option_no_comment");
+        card.infoComment = comment;
         card.infoButton.setTooltip(Tooltip.create(comment));
+    }
+
+    private List<FormattedCharSequence> infoLines(Card card) {
+        int maxWidth = Math.max(1, width - 36);
+        int wrapWidth = Math.min(320, maxWidth);
+        int visibleLines = infoVisibleLines();
+        List<FormattedCharSequence> lines = font.split(card.infoComment, wrapWidth);
+        while (lines.size() > visibleLines && wrapWidth < maxWidth) {
+            wrapWidth = Math.min(maxWidth, wrapWidth + 24);
+            lines = font.split(card.infoComment, wrapWidth);
+        }
+        return lines;
+    }
+
+    private int infoVisibleLines() {
+        return Math.max(2, (height - 56) / (font.lineHeight + 2));
+    }
+
+    private void showInfoTooltip(GuiGraphicsExtractor graphics, Card card, int mouseX, int mouseY) {
+        if (!card.option.key().equals(infoTooltipKey)) {
+            infoTooltipKey = card.option.key();
+            infoTooltipOffset = 0;
+        }
+        List<FormattedCharSequence> lines = infoLines(card);
+        int visibleLines = infoVisibleLines();
+        if (lines.size() <= visibleLines) {
+            graphics.setTooltipForNextFrame(font, lines, mouseX, mouseY);
+            return;
+        }
+        int pageSize = visibleLines - 1;
+        infoTooltipOffset = Math.clamp(infoTooltipOffset, 0, lines.size() - pageSize);
+        int end = Math.min(lines.size(), infoTooltipOffset + pageSize);
+        List<FormattedCharSequence> page = new ArrayList<>(lines.subList(infoTooltipOffset, end));
+        page.add(Component.literal((infoTooltipOffset > 0 ? "↑ " : "") + (infoTooltipOffset + 1)
+                + "-" + end + "/" + lines.size() + (end < lines.size() ? " ↓" : "")).getVisualOrderText());
+        graphics.setTooltipForNextFrame(font, page, mouseX, mouseY);
     }
 
     private AbstractWidget addCardIcon(Card card, int iconX, int iconY, SettingsIconButton.Icon icon,
@@ -803,7 +859,8 @@ class VanillaLitematicaSettingsScreen extends Screen {
                 if (draggingKey == null && card.motion == null && addonCategoryButtons.isEmpty()
                         && minecraft.gui.screen() == VanillaLitematicaSettingsScreen.this
                         && (isMouseOver(mouseX, mouseY) || isFocused() && getY() >= cardsViewportTop() && getBottom() <= contentBottom)) {
-                    super.extractTooltipForNextRenderPass(graphics, mouseX, mouseY);
+                    if (icon == SettingsIconButton.Icon.INFO) showInfoTooltip(graphics, card, mouseX, mouseY);
+                    else super.extractTooltipForNextRenderPass(graphics, mouseX, mouseY);
                 }
             }
 
@@ -829,6 +886,7 @@ class VanillaLitematicaSettingsScreen extends Screen {
             litematicaNames.put(option.key(), updatedNames.mainNames());
             if (updatedNames.aliases().isEmpty()) litematicaAliases.remove(option.key());
             else litematicaAliases.put(option.key(), updatedNames.aliases());
+            cachedOptions = null;
             layoutDirty = true;
         });
         openChildScreen(editor);
@@ -1327,6 +1385,21 @@ class VanillaLitematicaSettingsScreen extends Screen {
         if (allCategories != null && allCategories.mouseScrolled(mouseX, mouseY, horizontalAmount, verticalAmount)) return true;
         if (mouseY < contentTop || mouseY > contentBottom || mouseX < panelLeft || mouseX > panelLeft + panelWidth) return false;
         if (layoutDirty) rebuildLayout();
+        for (Card card : cards) {
+            if (card.infoButton == null || !card.infoButton.visible || card.motion != null
+                    || !card.infoButton.isMouseOver(mouseX, mouseY)) continue;
+            int pageSize = infoVisibleLines() - 1;
+            int maxOffset = Math.max(0, infoLines(card).size() - pageSize);
+            if (maxOffset > 0) {
+                if (!card.option.key().equals(infoTooltipKey)) {
+                    infoTooltipKey = card.option.key();
+                    infoTooltipOffset = 0;
+                }
+                infoTooltipOffset = Math.clamp(infoTooltipOffset - (int) Math.signum(verticalAmount) * 3, 0, maxOffset);
+                return true;
+            }
+            break;
+        }
         smoothScrollBy(-verticalAmount * 26 * SparkFixConfig.litematicaScrollSensitivity());
         return true;
     }
@@ -1458,11 +1531,9 @@ class VanillaLitematicaSettingsScreen extends Screen {
         if (savedOnClose) return;
         setFocused(null);
         savedOnClose = true;
-        SparkFixConfig.setLitematicaSettingsOrder(favoriteOrder, settingsOrder);
-        SparkFixConfig.setLitematicaNames(litematicaNames);
-        SparkFixConfig.setLitematicaAliases(litematicaAliases);
+        SparkFixConfig.setLitematicaSettingsSnapshot(favoriteOrder, settingsOrder,
+                litematicaNames, litematicaAliases, layoutColumns, discoveredKeys);
         SparkFixConfig.setLitematicaAliasPresetsApplied(new ArrayList<>(appliedAliasPresets));
-        SparkFixConfig.setLitematicaColumns(layoutColumns);
         customAliases.save(litematicaAliases, aliasPrimaryNames());
         LitematicaConfigDiscovery.save(groups);
         if (renderLayers != null) renderLayers.save();
@@ -1650,6 +1721,7 @@ class VanillaLitematicaSettingsScreen extends Screen {
         private ScaledEditor resetControl;
         private AbstractWidget aliasButton;
         private AbstractWidget infoButton;
+        private Component infoComment;
 
         private Card(Option option, int x, int y, int width, int height, boolean favorite,
                      int titleWidth, int aliasX, int aliasY, int infoX, int infoY, int headerToolsX,

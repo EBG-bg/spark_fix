@@ -42,6 +42,7 @@ final class LitematicaCustomAliases {
         if (!Files.exists(file)) return;
         try (var reader = Files.newBufferedReader(file, StandardCharsets.UTF_8)) {
             var object = JsonParser.parseReader(reader).getAsJsonObject();
+            var available = SparkFixConfig.availableOptionKeys(discoveredKeys);
             for (Map.Entry<String, JsonElement> entry : object.entrySet()) {
                 if (!entry.getValue().isJsonArray()) throw new IllegalArgumentException("Expected an alias array");
                 List<String> entries = new ArrayList<>();
@@ -51,8 +52,13 @@ final class LitematicaCustomAliases {
                     }
                     entries.add(value.getAsString());
                 }
-                List<String> cleaned = clean(entry.getKey(), entries, List.of());
-                if (!cleaned.isEmpty()) values.put(entry.getKey(), cleaned);
+                String resolved = available.resolve(entry.getKey());
+                String key = resolved == null ? entry.getKey() : resolved;
+                List<String> cleaned = clean(key, entries, List.of());
+                if (!cleaned.isEmpty()) {
+                    if (key.equals(entry.getKey())) values.put(key, cleaned);
+                    else values.putIfAbsent(key, cleaned);
+                }
             }
             for (String key : discoveredKeys) {
                 Set<String> packaged = names(presetAliases.getOrDefault(key, List.of()));

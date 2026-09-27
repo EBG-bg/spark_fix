@@ -2,7 +2,7 @@
 
 面向 **Minecraft 26.2 Fabric 客户端**的修复模组，源自 `warmaislandfix`，最初用于 [沃玛岛服务器](https://www.warma.fans/mc)。未触发问题时尽量保持原版和原模组行为。
 
-当前发布版本为 **2.1.0**。
+当前发布版本为 **2.1.1**。
 
 ## 已包含功能
 
@@ -25,7 +25,7 @@
 
 ## 安装
 
-[下载 spark_fix-2.1.0.jar](https://github.com/EBG-bg/spark_fix/releases/download/v2.1.0/spark_fix-2.1.0.jar) · [发布页](https://github.com/EBG-bg/spark_fix/releases/tag/v2.1.0)
+[下载 spark_fix-2.1.1.jar](https://github.com/EBG-bg/spark_fix/releases/download/v2.1.1/spark_fix-2.1.1.jar) · [发布页](https://github.com/EBG-bg/spark_fix/releases/tag/v2.1.1)
 
 1. 使用 Java 25，安装 Minecraft 26.2、Fabric Loader 0.19.3 或更高版本，以及对应版本的 Fabric API。
 2. 将 JAR 放入客户端 `mods` 目录；停用旧的 `warmaislandfix`、独立版 `adofaigo` 和 `REI Recipe Bridge`。
@@ -48,6 +48,8 @@
 ## 配置
 
 安装 Mod Menu 后打开 `spark_fix 设置`，右上角进入 `整合模组设置`。三个整合功能默认关闭，启用或停用须重启 Minecraft；点击模组卡片可展开子设置。
+
+adofai 启动按钮支持右键设置 0～60 秒启动延迟；启动后在物品栏上方显示倒计时和窗口检测状态。退出世界时取消尚未完成的启动任务。
 
 ### 投影设置
 
@@ -78,7 +80,7 @@
 git diff --check
 ```
 
-成品位于 `build/libs/spark_fix-2.1.0.jar`。
+成品位于 `build/libs/spark_fix-2.1.1.jar`。
 
 ## 许可证
 

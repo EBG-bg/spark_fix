@@ -36,7 +36,7 @@ final class LitematicaAliasPresets {
                                            Set<String> applied, Map<String, List<String>> mainNames) {
         Map<String, List<String>> presetAliases = new LinkedHashMap<>();
         if (!Files.isDirectory(directory)) return presetAliases;
-        Set<String> available = new HashSet<>(discoveredKeys);
+        var available = SparkFixConfig.availableOptionKeys(discoveredKeys);
         List<Path> files;
         try (var paths = Files.list(directory)) {
             files = paths.filter(Files::isRegularFile).filter(path -> {
@@ -62,8 +62,8 @@ final class LitematicaAliasPresets {
                 if (entries == null) throw new IllegalArgumentException("Missing aliases object");
                 String prefix = file.getFileName() + "::" + revision + "::";
                 for (Map.Entry<String, JsonElement> entry : entries.entrySet()) {
-                    String key = entry.getKey();
-                    if (!available.contains(key)) continue;
+                    String key = available.resolve(entry.getKey());
+                    if (key == null) continue;
                     if (!entry.getValue().isJsonArray()) continue;
                     List<String> definitions = new ArrayList<>();
                     for (JsonElement value : entry.getValue().getAsJsonArray()) {
@@ -72,7 +72,7 @@ final class LitematicaAliasPresets {
                         if (!normalizedName(alias).isEmpty() && alias.length() <= 256) definitions.add(alias);
                     }
                     presetAliases.computeIfAbsent(key, ignored -> new ArrayList<>()).addAll(definitions);
-                    if (applied.contains(prefix + key)) continue;
+                    if (applied.contains(prefix + key) || applied.contains(prefix + entry.getKey())) continue;
                     Set<String> knownNames = new HashSet<>();
                     mainNames.getOrDefault(key, List.of()).forEach(name -> knownNames.add(normalizedName(name)));
                     String[] identity = key.split("::", 3);

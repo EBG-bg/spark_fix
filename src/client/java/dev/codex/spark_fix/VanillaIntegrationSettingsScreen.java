@@ -127,7 +127,7 @@ class VanillaIntegrationSettingsScreen extends Screen {
         int iconWidth = name.equals("Litematica") && !state.litematicaInstalled() ? 0 : 32;
         int textLeft = left + 24 + iconWidth + 6;
         int textWidth = panelWidth - (compact ? 56 : 212) - (iconWidth == 0 ? 0 : 38);
-        int nameHeight = text(Component.literal(name), textLeft, y + 10, textWidth, 0xFFFFFFFF);
+        int nameHeight = text(Component.literal(name.equals("adofaigo") ? "adofai" : name), textLeft, y + 10, textWidth, 0xFFFFFFFF);
         int summaryHeight = text(Component.translatable(summary), textLeft, y + 15 + nameHeight,
                 textWidth, IntegrationSettingsStyle.MUTED);
         int bodyHeight = nameHeight + summaryHeight + 5;

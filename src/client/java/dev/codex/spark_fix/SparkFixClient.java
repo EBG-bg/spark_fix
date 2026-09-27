@@ -1,8 +1,11 @@
 package dev.codex.spark_fix;
 
 import cn.reibridge.config.BridgeConfig;
+import com.adofaigo.client.AdofoigoLaunchHud;
+import com.adofaigo.client.SteamLauncher;
 import net.fabricmc.api.ClientModInitializer;
 import net.fabricmc.fabric.api.client.event.lifecycle.v1.ClientLifecycleEvents;
+import net.fabricmc.fabric.api.client.networking.v1.ClientPlayConnectionEvents;
 import net.fabricmc.loader.api.FabricLoader;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -19,6 +22,7 @@ public final class SparkFixClient implements ClientModInitializer {
     @Override
     public void onInitializeClient() {
         SparkFixConfig.load();
+        if (SparkFixConfig.adofaigoEnabledAtStartup()) AdofoigoLaunchHud.register();
         if (FabricLoader.getInstance().isModLoaded("roughlyenoughitems")) {
             BridgeConfig.load();
         }
@@ -27,7 +31,11 @@ public final class SparkFixClient implements ClientModInitializer {
             SparkFixConfig.adofaigoEnabledAtStartup(),
             SparkFixConfig.reiRecipeBridgeEnabledAtStartup()
         );
-        ClientLifecycleEvents.CLIENT_STOPPING.register(client -> cleanupAll());
+        ClientPlayConnectionEvents.DISCONNECT.register((connection, client) -> SteamLauncher.cancelPendingLaunch());
+        ClientLifecycleEvents.CLIENT_STOPPING.register(client -> {
+            SteamLauncher.cancelPendingLaunch();
+            cleanupAll();
+        });
     }
 
     private static void cleanupAll() {

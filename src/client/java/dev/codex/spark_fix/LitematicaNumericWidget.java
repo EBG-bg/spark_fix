@@ -15,6 +15,7 @@ import org.lwjgl.glfw.GLFW;
 
 /** Numeric editing with MaLiLib's own bounds and slider/text preference. */
 final class LitematicaNumericWidget extends AbstractWidget {
+    private final Font font;
     private final Object option;
     private final boolean integer;
     private final double minimum;
@@ -26,6 +27,7 @@ final class LitematicaNumericWidget extends AbstractWidget {
 
     LitematicaNumericWidget(Font font, Object option, String name, int width) {
         super(0, 0, width, heightFor(width), Component.literal(name));
+        this.font = font;
         this.option = option;
         integer = LitematicaConfigDiscovery.integerOption(option);
         minimum = LitematicaConfigDiscovery.number(option, integer ? "getMinIntegerValue" : "getMinDoubleValue");
@@ -141,6 +143,20 @@ final class LitematicaNumericWidget extends AbstractWidget {
             updateMessage();
         }
         @Override protected void updateMessage() { setMessage(Component.literal(LitematicaConfigDiscovery.value(option))); }
+        @Override public void extractWidgetRenderState(GuiGraphicsExtractor graphics, int mouseX, int mouseY, float tick) {
+            int center = getX() + HANDLE_WIDTH / 2
+                    + (int) Math.round(value * (getWidth() - HANDLE_WIDTH));
+            int trackLeft = getX() + HANDLE_WIDTH / 2;
+            int trackRight = getX() + getWidth() - HANDLE_WIDTH / 2;
+            int trackY = getY() + 15;
+            graphics.fill(trackLeft, trackY, trackRight, trackY + 2, 0x8064778D);
+            graphics.fill(trackLeft, trackY, center, trackY + 2, 0xFF87B1F9);
+            IntegrationSettingsStyle.roundedRect(graphics, center - 2, getY() + 11, 4, 8, 2,
+                    isHovered() || isFocused() ? 0xFFFFFFFF : 0xFFE5F0FF);
+            graphics.text(font, getMessage(), getX() + (getWidth() - font.width(getMessage())) / 2,
+                    getY() + 1, 0xFFEAF3FF);
+            handleCursor(graphics);
+        }
         @Override protected void applyValue() {
             double next = minimum * (1 - value) + maximum * value;
             if (integer) next = Math.round(next);

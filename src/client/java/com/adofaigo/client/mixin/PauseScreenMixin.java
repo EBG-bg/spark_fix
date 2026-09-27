@@ -50,6 +50,9 @@ public abstract class PauseScreenMixin extends Screen {
         }
 
         int x = Math.max(4, firstIconX - 24);
-        this.addRenderableWidget(new AdofoigoIconButton(x, rowY, button -> SteamLauncher.launchOrFocus()));
+        this.addRenderableWidget(new AdofoigoIconButton(x, rowY, button -> {
+            SteamLauncher.launchOrFocus();
+            minecraft.setScreenAndShow(null);
+        }));
     }
 }

@@ -29,6 +29,27 @@ final class LitematicaConfigDiscovery {
     private static final String CONFIG_BASE = "fi.dy.masa.malilib.config.IConfigBase";
     private static final String MANAGER = "fi.dy.masa.malilib.config.ConfigManager";
     private static final Set<Object> SEEN = Collections.newSetFromMap(new IdentityHashMap<>());
+    private static final ClassValue<Accessors> ACCESSORS = new ClassValue<>() {
+        @Override protected Accessors computeValue(Class<?> type) {
+            Map<String, Method> getters = new java.util.HashMap<>();
+            Map<String, Method> setters = new java.util.HashMap<>();
+            for (Method method : type.getMethods()) {
+                Map<String, Method> methods;
+                if (method.getParameterCount() == 0) methods = getters;
+                else if (method.getParameterCount() == 1
+                        && (!method.getName().equals("setValueFromString") || method.getParameterTypes()[0] == String.class)) {
+                    methods = setters;
+                } else continue;
+                if (!methods.containsKey(method.getName())) {
+                    method.trySetAccessible();
+                    methods.put(method.getName(), method);
+                }
+            }
+            return new Accessors(Map.copyOf(getters), Map.copyOf(setters));
+        }
+    };
+
+    private record Accessors(Map<String, Method> getters, Map<String, Method> setters) { }
 
     private LitematicaConfigDiscovery() {
     }
@@ -261,6 +282,40 @@ final class LitematicaConfigDiscovery {
         return find(option, "getOptionListValue") != null && setter(option, "setOptionListValue") != null;
     }
 
+    static boolean isStringList(Object option) {
+        Method getStrings = find(option, "getStrings");
+        Method getDefaults = find(option, "getDefaultStrings");
+        Method setStrings = setter(option, "setStrings");
+        return stringCall(option, "getType").equalsIgnoreCase("STRING_LIST")
+                && getStrings != null && List.class.isAssignableFrom(getStrings.getReturnType())
+                && getDefaults != null && List.class.isAssignableFrom(getDefaults.getReturnType())
+                && setStrings != null && setStrings.getParameterTypes()[0] == List.class;
+    }
+
+    static List<String> stringListValue(Object option) {
+        try {
+            Object value = find(option, "getStrings").invoke(option);
+            if (value instanceof List<?> entries) {
+                List<String> result = new ArrayList<>(entries.size());
+                for (Object entry : entries) if (entry instanceof String text) result.add(text);
+                return result;
+            }
+        } catch (ReflectiveOperationException | RuntimeException exception) {
+            SparkFixClient.LOGGER.debug("Could not read dynamic MaLiLib string list", exception);
+        }
+        return List.of();
+    }
+
+    static boolean setStringListValue(Object option, List<String> values) {
+        try {
+            setter(option, "setStrings").invoke(option, new ArrayList<>(values));
+            return true;
+        } catch (ReflectiveOperationException | RuntimeException exception) {
+            SparkFixClient.LOGGER.warn("Could not update dynamic MaLiLib string list {}", stableName(option), exception);
+            return false;
+        }
+    }
+
     static boolean isNumeric(Object option) {
         String type = stringCall(option, "getType");
         return (type.isEmpty() || type.equalsIgnoreCase("INTEGER") || type.equalsIgnoreCase("DOUBLE"))
@@ -439,24 +494,11 @@ final class LitematicaConfigDiscovery {
     }
 
     private static Method find(Object target, String name) {
-        for (Method method : target.getClass().getMethods()) {
-            if (method.getName().equals(name) && method.getParameterCount() == 0) {
-                method.trySetAccessible();
-                return method;
-            }
-        }
-        return null;
+        return ACCESSORS.get(target.getClass()).getters().get(name);
     }
 
     private static Method setter(Object target, String name) {
-        for (Method method : target.getClass().getMethods()) {
-            if (method.getName().equals(name) && method.getParameterCount() == 1
-                    && (name.equals("setValueFromString") ? method.getParameterTypes()[0] == String.class : true)) {
-                method.trySetAccessible();
-                return method;
-            }
-        }
-        return null;
+        return ACCESSORS.get(target.getClass()).setters().get(name);
     }
 
     private static boolean hasSetter(Object target, String name) {

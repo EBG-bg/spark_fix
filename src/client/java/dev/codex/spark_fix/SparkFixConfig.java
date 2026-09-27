@@ -9,6 +9,8 @@ import java.io.InputStream;
 import java.io.OutputStream;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.nio.file.AtomicMoveNotSupportedException;
+import java.nio.file.StandardCopyOption;
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.Base64;
@@ -33,11 +35,13 @@ public final class SparkFixConfig {
     public static final double MIN_LITEMATICA_COMPACTNESS = 1.0;
     public static final double MAX_LITEMATICA_COMPACTNESS = 5.0;
     public static final double DEFAULT_LITEMATICA_COMPACTNESS = 1.0;
+    public static final int MAX_ADOFAIGO_LAUNCH_DELAY_SECONDS = 60;
 
     private static final Logger LOGGER = LoggerFactory.getLogger("spark_fix/config");
     private static final String MAX_REI_CLICKS_KEY = "rei.max_clicks";
     private static final String SCAN_ALL_TRANSLATIONS_KEY = "axiom.scan_all_translations";
     private static final String ADOFAIGO_ENABLED_KEY = "adofaigo.enabled";
+    private static final String ADOFAIGO_LAUNCH_DELAY_KEY = "adofaigo.launch_delay_seconds";
     private static final String REI_RECIPE_BRIDGE_ENABLED_KEY = "rei_recipe_bridge.enabled";
     private static final String LITEMATICA_ENABLED_KEY = "litematica.enabled";
     private static final String LITEMATICA_FAVORITES_KEY = "litematica.settings.favorites";
@@ -58,6 +62,7 @@ public final class SparkFixConfig {
     private static int maxReiClicks = DEFAULT_MAX_REI_CLICKS;
     private static boolean scanAllTranslations;
     private static boolean adofaigoEnabled;
+    private static int adofaigoLaunchDelaySeconds;
     private static boolean reiRecipeBridgeEnabled;
     private static boolean litematicaEnabled;
     private static boolean adofaigoEnabledAtStartup;
@@ -112,6 +117,13 @@ public final class SparkFixConfig {
             adofaigoEnabled = Boolean.parseBoolean(
                 properties.getProperty(ADOFAIGO_ENABLED_KEY, Boolean.FALSE.toString())
             );
+            try {
+                adofaigoLaunchDelaySeconds = Math.clamp(Integer.parseInt(
+                        properties.getProperty(ADOFAIGO_LAUNCH_DELAY_KEY, "0").trim()),
+                        0, MAX_ADOFAIGO_LAUNCH_DELAY_SECONDS);
+            } catch (NumberFormatException ignored) {
+                adofaigoLaunchDelaySeconds = 0;
+            }
             reiRecipeBridgeEnabled = Boolean.parseBoolean(
                 properties.getProperty(REI_RECIPE_BRIDGE_ENABLED_KEY, Boolean.FALSE.toString())
             );
@@ -160,6 +172,7 @@ public final class SparkFixConfig {
         properties.setProperty(LITEMATICA_COMPACTNESS_KEY, Double.toString(litematicaCompactness));
         properties.setProperty(SCAN_ALL_TRANSLATIONS_KEY, Boolean.toString(scanAllTranslations));
         properties.setProperty(ADOFAIGO_ENABLED_KEY, Boolean.toString(adofaigoEnabled));
+        properties.setProperty(ADOFAIGO_LAUNCH_DELAY_KEY, Integer.toString(adofaigoLaunchDelaySeconds));
         properties.setProperty(REI_RECIPE_BRIDGE_ENABLED_KEY, Boolean.toString(reiRecipeBridgeEnabled));
         properties.setProperty(LITEMATICA_ENABLED_KEY, Boolean.toString(litematicaEnabled));
         if (litematicaFavorites != null) writeStringList(properties, LITEMATICA_FAVORITES_KEY, litematicaFavorites);
@@ -174,13 +187,28 @@ public final class SparkFixConfig {
         if (litematicaCategoryOrdered != null) writeStringList(properties, LITEMATICA_CATEGORY_ORDERED_KEY, litematicaCategoryOrdered);
 
         Path file = configFile();
+        Path temporary = null;
         try {
             Files.createDirectories(file.getParent());
-            try (OutputStream output = Files.newOutputStream(file)) {
+            temporary = Files.createTempFile(file.getParent(), "spark_fix-", ".tmp");
+            try (OutputStream output = Files.newOutputStream(temporary)) {
                 properties.store(output, "spark_fix configuration");
+            }
+            try {
+                Files.move(temporary, file, StandardCopyOption.ATOMIC_MOVE, StandardCopyOption.REPLACE_EXISTING);
+            } catch (AtomicMoveNotSupportedException exception) {
+                Files.move(temporary, file, StandardCopyOption.REPLACE_EXISTING);
             }
         } catch (IOException | RuntimeException exception) {
             LOGGER.warn("Could not save spark_fix configuration.", exception);
+        } finally {
+            if (temporary != null) {
+                try {
+                    Files.deleteIfExists(temporary);
+                } catch (IOException exception) {
+                    LOGGER.warn("Could not remove spark_fix temporary configuration.", exception);
+                }
+            }
         }
     }
 
@@ -217,6 +245,16 @@ public final class SparkFixConfig {
     public static synchronized boolean adofaigoEnabledAtStartup() {
         load();
         return adofaigoEnabledAtStartup;
+    }
+
+    public static synchronized int adofaigoLaunchDelaySeconds() {
+        load();
+        return adofaigoLaunchDelaySeconds;
+    }
+
+    public static synchronized void setAdofoigoLaunchDelaySeconds(int seconds) {
+        load();
+        adofaigoLaunchDelaySeconds = Math.clamp(seconds, 0, MAX_ADOFAIGO_LAUNCH_DELAY_SECONDS);
     }
 
     public static synchronized boolean reiRecipeBridgeEnabled() {
@@ -293,31 +331,16 @@ public final class SparkFixConfig {
 
     public static synchronized List<String> litematicaFavorites(List<String> discoveredKeys) {
         load();
-        Set<String> available = new LinkedHashSet<>(distinctKeys(discoveredKeys));
-        List<String> result = new ArrayList<>();
-        if (litematicaFavorites != null) {
-            for (String key : litematicaFavorites) {
-                if (available.contains(key) && !result.contains(key)) result.add(key);
-            }
-        }
-        litematicaFavorites = result;
-        return List.copyOf(result);
+        return List.copyOf(visibleKeys(litematicaFavorites, availableOptionKeys(discoveredKeys)));
     }
 
     public static synchronized List<String> litematicaSettingsOrder(List<String> discoveredKeys) {
         load();
         List<String> defaults = distinctKeys(discoveredKeys);
-        Set<String> available = new LinkedHashSet<>(defaults);
-        List<String> result = new ArrayList<>();
-        if (litematicaSettingsOrder != null) {
-            for (String key : litematicaSettingsOrder) {
-                if (available.contains(key) && !result.contains(key)) result.add(key);
-            }
-        }
+        List<String> result = visibleKeys(litematicaSettingsOrder, availableOptionKeys(defaults));
         for (String key : defaults) {
             if (!result.contains(key)) result.add(key);
         }
-        litematicaSettingsOrder = result;
         return List.copyOf(result);
     }
 
@@ -329,15 +352,14 @@ public final class SparkFixConfig {
 
     public static synchronized Map<String, List<String>> litematicaColumns(List<String> discoveredKeys) {
         load();
-        Set<String> available = new HashSet<>(discoveredKeys);
+        AvailableOptionKeys available = availableOptionKeys(discoveredKeys);
         Map<String, List<String>> result = new LinkedHashMap<>();
         if (litematicaColumns != null) {
             litematicaColumns.forEach((layout, keys) -> {
-                List<String> retained = keys.stream().filter(available::contains).distinct().toList();
+                List<String> retained = visibleKeys(keys, available);
                 if (!retained.isEmpty()) result.put(layout, retained);
             });
         }
-        litematicaColumns = result;
         return copyStringListMap(result);
     }
 
@@ -348,18 +370,7 @@ public final class SparkFixConfig {
 
     public static synchronized Map<String, List<String>> litematicaAliases(List<String> discoveredKeys) {
         load();
-        Set<String> available = new LinkedHashSet<>(distinctKeys(discoveredKeys));
-        Map<String, List<String>> result = new LinkedHashMap<>();
-        if (litematicaAliases != null) {
-            for (Map.Entry<String, List<String>> entry : litematicaAliases.entrySet()) {
-                if (available.contains(entry.getKey())) {
-                    List<String> values = distinctKeys(entry.getValue());
-                    if (!values.isEmpty()) result.put(entry.getKey(), values);
-                }
-            }
-        }
-        litematicaAliases = result;
-        return copyStringListMap(result);
+        return visibleValues(litematicaAliases, availableOptionKeys(discoveredKeys));
     }
 
     public static synchronized void setLitematicaAliases(Map<String, List<String>> aliases) {
@@ -378,18 +389,7 @@ public final class SparkFixConfig {
 
     public static synchronized Map<String, List<String>> litematicaNames(List<String> discoveredKeys) {
         load();
-        Set<String> available = new LinkedHashSet<>(distinctKeys(discoveredKeys));
-        Map<String, List<String>> result = new LinkedHashMap<>();
-        if (litematicaNames != null) {
-            for (Map.Entry<String, List<String>> entry : litematicaNames.entrySet()) {
-                if (available.contains(entry.getKey())) {
-                    List<String> values = distinctKeys(entry.getValue());
-                    if (!values.isEmpty()) result.put(entry.getKey(), values);
-                }
-            }
-        }
-        litematicaNames = result;
-        return copyStringListMap(result);
+        return visibleValues(litematicaNames, availableOptionKeys(discoveredKeys));
     }
 
     public static synchronized void setLitematicaNames(Map<String, List<String>> names) {
@@ -404,6 +404,101 @@ public final class SparkFixConfig {
             }
         }
         litematicaNames = result;
+    }
+
+    public static synchronized void setLitematicaSettingsSnapshot(List<String> favorites, List<String> order,
+            Map<String, List<String>> names, Map<String, List<String>> aliases,
+            Map<String, List<String>> columns, List<String> discoveredKeys) {
+        load();
+        AvailableOptionKeys available = availableOptionKeys(discoveredKeys);
+        litematicaFavorites = retainUndiscovered(favorites, litematicaFavorites, available);
+        litematicaSettingsOrder = retainUndiscovered(order, litematicaSettingsOrder, available);
+        litematicaNames = retainUndiscoveredValues(names, litematicaNames, available);
+        litematicaAliases = retainUndiscoveredValues(aliases, litematicaAliases, available);
+        Map<String, List<String>> mergedColumns = copyStringListMap(columns);
+        if (litematicaColumns != null) {
+            litematicaColumns.forEach((layout, keys) -> {
+                List<String> missing = keys.stream().filter(key -> available.resolve(key) == null).toList();
+                if (missing.isEmpty()) return;
+                List<String> merged = new ArrayList<>(mergedColumns.getOrDefault(layout, List.of()));
+                merged.addAll(missing);
+                mergedColumns.put(layout, distinctKeys(merged));
+            });
+        }
+        litematicaColumns = mergedColumns;
+    }
+
+    private static List<String> visibleKeys(List<String> saved, AvailableOptionKeys available) {
+        List<String> result = new ArrayList<>();
+        if (saved == null) return result;
+        for (String key : saved) {
+            String resolved = available.resolve(key);
+            if (resolved != null && !result.contains(resolved)) result.add(resolved);
+        }
+        return result;
+    }
+
+    private static Map<String, List<String>> visibleValues(Map<String, List<String>> saved, AvailableOptionKeys available) {
+        Map<String, List<String>> result = new LinkedHashMap<>();
+        if (saved != null) saved.forEach((key, values) -> {
+            String resolved = available.resolve(key);
+            if (resolved != null && !values.isEmpty()) result.putIfAbsent(resolved, distinctKeys(values));
+        });
+        return result;
+    }
+
+    private static List<String> retainUndiscovered(List<String> current, List<String> saved, AvailableOptionKeys available) {
+        List<String> result = distinctKeys(current);
+        if (saved != null) {
+            for (String key : saved) {
+                if (available.resolve(key) == null && !result.contains(key)) result.add(key);
+            }
+        }
+        return result;
+    }
+
+    private static Map<String, List<String>> retainUndiscoveredValues(Map<String, List<String>> current,
+            Map<String, List<String>> saved, AvailableOptionKeys available) {
+        Map<String, List<String>> result = copyStringListMap(current);
+        if (saved != null) saved.forEach((key, values) -> {
+            if (available.resolve(key) == null) result.putIfAbsent(key, values);
+        });
+        return result;
+    }
+
+    private record OptionIdentity(String group, String name) { }
+
+    record AvailableOptionKeys(Set<String> exact, Map<OptionIdentity, String> unique) {
+        String resolve(String key) {
+            if (exact.contains(key)) return key;
+            OptionIdentity identity = optionIdentity(key);
+            return identity == null ? null : unique.get(identity);
+        }
+    }
+
+    static AvailableOptionKeys availableOptionKeys(List<String> discoveredKeys) {
+        Set<String> exact = new LinkedHashSet<>(distinctKeys(discoveredKeys));
+        Map<OptionIdentity, String> unique = new LinkedHashMap<>();
+        Set<OptionIdentity> ambiguous = new HashSet<>();
+        for (String key : exact) {
+            OptionIdentity identity = optionIdentity(key);
+            if (identity != null && unique.putIfAbsent(identity, key) != null) ambiguous.add(identity);
+        }
+        for (OptionIdentity identity : ambiguous) unique.remove(identity);
+        return new AvailableOptionKeys(exact, unique);
+    }
+
+    private static OptionIdentity optionIdentity(String key) {
+        if (key == null) return null;
+        int first = key.indexOf("::");
+        int second = first < 0 ? -1 : key.indexOf("::", first + 2);
+        if (first <= 0 || second <= first + 2 || second + 2 >= key.length()) return null;
+        try {
+            Integer.parseInt(key.substring(first + 2, second));
+        } catch (NumberFormatException ignored) {
+            return null;
+        }
+        return new OptionIdentity(key.substring(0, first), key.substring(second + 2));
     }
 
     private static Map<String, List<String>> copyStringListMap(Map<String, List<String>> source) {
