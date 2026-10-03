@@ -1,0 +1,12 @@
+{
+  "required": false,
+  "plugin": "dev.codex.spark_fix.mixin.client.XaeroMixinPlugin",
+  "package": "dev.codex.spark_fix.mixin.client",
+  "compatibilityLevel": "JAVA_25",
+  "client": [
+    "XaeroGuiWaypointsMixin"
+  ],
+  "injectors": {
+    "defaultRequire": 0
+  }
+}

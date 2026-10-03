@@ -2,7 +2,7 @@
 
 面向 **Minecraft 26.2 Fabric 客户端**的修复模组，源自 `warmaislandfix`，最初用于 [沃玛岛服务器](https://www.warma.fans/mc)。未触发问题时尽量保持原版和原模组行为。
 
-当前发布版本为 **2.1.2**。
+当前发布版本为 **2.1.3**。
 
 ## 已包含功能
 
@@ -23,9 +23,11 @@
 
 第三方模组修复仅在安装对应模组时生效。
 
+安装 Xaero 小地图时，路径点列表中会显示“删除全部死亡点”按钮，一次删除当前所选世界/维度所有集合中的自动死亡点并保存。此功能无需配置开关，保留普通和第三方路径点。
+
 ## 安装
 
-[下载 spark_fix-2.1.2.jar](https://github.com/EBG-bg/spark_fix/releases/download/v2.1.2/spark_fix-2.1.2.jar) · [发布页](https://github.com/EBG-bg/spark_fix/releases/tag/v2.1.2)
+[下载 spark_fix-2.1.3.jar](https://github.com/EBG-bg/spark_fix/releases/download/v2.1.3/spark_fix-2.1.3.jar) · [发布页](https://github.com/EBG-bg/spark_fix/releases/tag/v2.1.3)
 
 1. 使用 Java 25，安装 Minecraft 26.2、Fabric Loader 0.19.3 或更高版本，以及对应版本的 Fabric API。
 2. 将 JAR 放入客户端 `mods` 目录；停用旧的 `warmaislandfix`、独立版 `adofaigo` 和 `REI Recipe Bridge`。
@@ -81,7 +83,7 @@ adofai 启动按钮支持右键设置 0～60 秒启动延迟；启动后在物�
 git diff --check
 ```
 
-成品位于 `build/libs/spark_fix-2.1.2.jar`。
+成品位于 `build/libs/spark_fix-2.1.3.jar`。
 
 ## 许可证
 

@@ -49,6 +49,7 @@ dependencies {
     clientCompileOnly "me.shedaniel.cloth:cloth-config-fabric:${project.cloth_config_version}"
     clientCompileOnly "me.shedaniel.cloth:basic-math:${project.basic_math_version}"
     clientCompileOnly "maven.modrinth:modmenu:${project.modmenu_version}"
+    clientCompileOnly "maven.modrinth:xaeros-minimap:${project.xaero_minimap_version}"
     // Optional enhanced settings UI. The runtime screen is loaded reflectively;
     // spark_fix falls back to its vanilla UI when owo is not installed.
     clientCompileOnly "maven.modrinth:owo-lib:${project.owo_version}"

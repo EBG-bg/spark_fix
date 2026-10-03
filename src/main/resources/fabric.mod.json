@@ -43,6 +43,10 @@
                        "environment":  "client"
                    },
                    {
+                       "config":  "spark_fix.xaero_compat.client.mixins.json",
+                       "environment":  "client"
+                   },
+                   {
                        "config":  "spark_fix.adofaigo.client.mixins.json",
                        "environment":  "client"
                    },
@@ -67,6 +71,7 @@
                      "chatpatches":  "*",
                      "axiom":  "5.5.0",
                      "roughlyenoughitems":  "26.2.820",
+                     "xaerominimap":  ">=26.5.1",
                      "modmenu":  "20.0.1",
                      "owo":  ">=0.13.1",
                      "litematica":  ">=0.28.8",
