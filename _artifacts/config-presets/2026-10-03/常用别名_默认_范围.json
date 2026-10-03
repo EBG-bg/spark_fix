@@ -1,0 +1,5 @@
+{
+  "litematica-printer::9::打印机工作半径": ["打印机工作范围"],
+  "litematica-printer::11::半径模式": ["范围模式"],
+  "litematica-printer::1::workRange": ["工作范围"]
+}

@@ -24,15 +24,23 @@ final class LitematicaCategories {
             Class<?> owner = group.handler().getClass();
             String configPackage = owner.getPackageName();
             String root = configPackage.endsWith(".config") ? configPackage.substring(0, configPackage.length() - 7) : configPackage;
-            Class<?> tabs = firstClass(owner.getClassLoader(), configPackage + ".ConfigUi$Tab", root + ".gui.GuiConfigs$ConfigGuiTab");
+            Class<?> tabs = firstClass(owner.getClassLoader(), configPackage + ".ConfigUi$Tab",
+                    root + ".gui.ConfigUi$Tab", root + ".gui.GuiConfigs$ConfigGuiTab");
             if (tabs != null && tabs.isEnum()) {
                 for (Object tab : tabs.getEnumConstants()) {
                     String name = ((Enum<?>) tab).name();
                     if (name.equals("ALL")) continue;
                     List<Object> entries = new ArrayList<>();
-                    collectCategory(owner, name, entries);
-                    Class<?> sibling = firstClass(owner.getClassLoader(), configPackage + "." + camel(name));
-                    if (sibling != null) collectCategory(sibling, name, entries);
+                    try {
+                        if (tab.getClass().getMethod("getConfigs").invoke(tab) instanceof Iterable<?> configs) {
+                            configs.forEach(entries::add);
+                        }
+                    } catch (ReflectiveOperationException ignored) { }
+                    if (entries.isEmpty()) {
+                        collectCategory(owner, name, entries);
+                        Class<?> sibling = firstClass(owner.getClassLoader(), configPackage + "." + camel(name));
+                        if (sibling != null) collectCategory(sibling, name, entries);
+                    }
                     if (name.equals("RENDER_LAYERS")) entries.addAll(group.options().stream()
                             .filter(LitematicaRenderLayerSettings.Setting.class::isInstance).toList());
                     add(result, group, name, tabLabel(tab), entries);
@@ -108,14 +116,16 @@ final class LitematicaCategories {
     }
 
     private static Component tabLabel(Object tab) {
-        try {
-            return Component.literal(String.valueOf(tab.getClass().getMethod("getDisplayName").invoke(tab)));
-        } catch (ReflectiveOperationException ignored) {
+        for (String method : List.of("getDisplayName", "getName")) {
             try {
-                return Component.literal(String.valueOf(tab.getClass().getField("name").get(tab)));
-            } catch (ReflectiveOperationException ignoredAgain) {
-                return Component.literal(camel(((Enum<?>) tab).name()));
-            }
+                Object label = tab.getClass().getMethod(method).invoke(tab);
+                if (label != null && !label.toString().isBlank()) return Component.literal(label.toString());
+            } catch (ReflectiveOperationException ignored) { }
+        }
+        try {
+            return Component.literal(String.valueOf(tab.getClass().getField("name").get(tab)));
+        } catch (ReflectiveOperationException ignored) {
+            return Component.literal(camel(((Enum<?>) tab).name()));
         }
     }
 

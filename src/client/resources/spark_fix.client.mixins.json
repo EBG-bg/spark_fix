@@ -5,6 +5,7 @@
     "client":  [
                    "IntegratedServerThreadFixMixin",
                    "ClientWaypointManagerFixMixin",
+                   "PrinterMovementPacketFixMixin",
                    "BoatHandsBusyMixin",
                    "BoatConsumableUseMixin",
                    "BoatConsumableRendererMixin"

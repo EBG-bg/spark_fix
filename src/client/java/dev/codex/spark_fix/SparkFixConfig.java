@@ -55,6 +55,7 @@ public final class SparkFixConfig {
     private static final String LITEMATICA_HIDDEN_MODULES_KEY = "litematica.ui.hidden_modules";
     private static final String LITEMATICA_FILTER_FAVORITES_KEY = "litematica.ui.filter_favorites";
     private static final String LITEMATICA_ALIAS_PRESETS_APPLIED_KEY = "litematica.settings.alias_presets_applied";
+    private static final String LITEMATICA_CUSTOM_ALIASES_SAVED_KEY = "litematica.settings.custom_aliases_saved";
     private static final String LITEMATICA_CATEGORY_ORDERED_KEY = "litematica.settings.category_ordered";
     private static final String LEGACY_CONFIG_FILE_NAME = "warmaislandfix.properties";
     private static final int CONFIG_FIELD_PART_LENGTH = 1800;
@@ -80,6 +81,7 @@ public final class SparkFixConfig {
     private static List<String> litematicaHiddenModules;
     private static boolean litematicaFilterFavorites;
     private static List<String> litematicaAliasPresetsApplied;
+    private static Map<String, List<String>> litematicaCustomAliasesSaved;
     private static List<String> litematicaCategoryOrdered;
 
     private SparkFixConfig() {
@@ -147,6 +149,7 @@ public final class SparkFixConfig {
             litematicaHiddenModules = readStringList(properties, LITEMATICA_HIDDEN_MODULES_KEY);
             litematicaFilterFavorites = Boolean.parseBoolean(properties.getProperty(LITEMATICA_FILTER_FAVORITES_KEY, "false"));
             litematicaAliasPresetsApplied = readStringList(properties, LITEMATICA_ALIAS_PRESETS_APPLIED_KEY);
+            litematicaCustomAliasesSaved = readStringListMap(properties, LITEMATICA_CUSTOM_ALIASES_SAVED_KEY);
             litematicaCategoryOrdered = readStringList(properties, LITEMATICA_CATEGORY_ORDERED_KEY);
             if (migrateLegacyConfig) {
                 try {
@@ -184,6 +187,8 @@ public final class SparkFixConfig {
         properties.setProperty(LITEMATICA_FILTER_FAVORITES_KEY, Boolean.toString(litematicaFilterFavorites));
         if (litematicaAliasPresetsApplied != null) writeStringList(properties,
                 LITEMATICA_ALIAS_PRESETS_APPLIED_KEY, litematicaAliasPresetsApplied);
+        if (litematicaCustomAliasesSaved != null) writeStringListMap(properties,
+                LITEMATICA_CUSTOM_ALIASES_SAVED_KEY, litematicaCustomAliasesSaved);
         if (litematicaCategoryOrdered != null) writeStringList(properties, LITEMATICA_CATEGORY_ORDERED_KEY, litematicaCategoryOrdered);
 
         Path file = configFile();
@@ -371,6 +376,18 @@ public final class SparkFixConfig {
     public static synchronized Map<String, List<String>> litematicaAliases(List<String> discoveredKeys) {
         load();
         return visibleValues(litematicaAliases, availableOptionKeys(discoveredKeys));
+    }
+
+    static synchronized Map<String, List<String>> litematicaCustomAliasesSaved() {
+        load();
+        return litematicaCustomAliasesSaved == null ? null : copyStringListMap(litematicaCustomAliasesSaved);
+    }
+
+    static synchronized void updateLitematicaCustomAliases(Map<String, List<String>> saved,
+                                                           Map<String, List<String>> deleted) {
+        load();
+        if (litematicaAliases != null) LitematicaCustomAliases.removeSavedAliases(litematicaAliases, deleted);
+        litematicaCustomAliasesSaved = copyStringListMap(saved);
     }
 
     public static synchronized void setLitematicaAliases(Map<String, List<String>> aliases) {

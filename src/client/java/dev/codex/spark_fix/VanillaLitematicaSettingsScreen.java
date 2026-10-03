@@ -879,13 +879,16 @@ class VanillaLitematicaSettingsScreen extends Screen {
     }
 
     private void openAliasEditor(Option option) {
+        if (customAliases.refreshDeletedFile(litematicaAliases)) layoutDirty = true;
         List<String> names = new ArrayList<>(litematicaNames.getOrDefault(option.key(), List.of(option.name())));
         if (names.isEmpty()) names.add(option.name());
         List<String> aliases = new ArrayList<>(litematicaAliases.getOrDefault(option.key(), List.of()));
         LitematicaAliasEditorScreen editor = new LitematicaAliasEditorScreen(this, option, names, aliases, updatedNames -> {
+            customAliases.recordEdit(option.key(), aliases, updatedNames.aliases());
             litematicaNames.put(option.key(), updatedNames.mainNames());
             if (updatedNames.aliases().isEmpty()) litematicaAliases.remove(option.key());
             else litematicaAliases.put(option.key(), updatedNames.aliases());
+            customAliases.refreshDeletedFile(litematicaAliases);
             cachedOptions = null;
             layoutDirty = true;
         });
@@ -1531,10 +1534,11 @@ class VanillaLitematicaSettingsScreen extends Screen {
         if (savedOnClose) return;
         setFocused(null);
         savedOnClose = true;
+        customAliases.save(litematicaAliases, aliasPrimaryNames());
+        SparkFixConfig.updateLitematicaCustomAliases(customAliases.savedAliases(), customAliases.deletedAliases());
         SparkFixConfig.setLitematicaSettingsSnapshot(favoriteOrder, settingsOrder,
                 litematicaNames, litematicaAliases, layoutColumns, discoveredKeys);
         SparkFixConfig.setLitematicaAliasPresetsApplied(new ArrayList<>(appliedAliasPresets));
-        customAliases.save(litematicaAliases, aliasPrimaryNames());
         LitematicaConfigDiscovery.save(groups);
         if (renderLayers != null) renderLayers.save();
         SparkFixConfig.save();

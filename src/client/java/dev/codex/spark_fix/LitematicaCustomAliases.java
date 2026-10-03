@@ -26,20 +26,33 @@ final class LitematicaCustomAliases {
     private final List<String> discoveredKeys;
     private final Map<String, List<String>> presetAliases;
     private final Map<String, List<String>> values = new LinkedHashMap<>();
+    private final Map<String, List<String>> savedAliases = new LinkedHashMap<>();
+    private final Map<String, List<String>> deletedAliases = new LinkedHashMap<>();
+    private final Map<String, List<String>> newAliases = new LinkedHashMap<>();
+    private boolean deletionHandled;
     private boolean writable = true;
 
     static LitematicaCustomAliases load(List<String> discoveredKeys, Map<String, List<String>> aliases,
                                         Map<String, List<String>> presetAliases, Map<String, List<String>> mainNames) {
         return new LitematicaCustomAliases(FabricLoader.getInstance().getConfigDir().resolve("spark_fix"),
-                discoveredKeys, aliases, presetAliases, mainNames);
+                discoveredKeys, aliases, presetAliases, mainNames, SparkFixConfig.litematicaCustomAliasesSaved());
     }
 
     LitematicaCustomAliases(Path directory, List<String> discoveredKeys, Map<String, List<String>> aliases,
                             Map<String, List<String>> presetAliases, Map<String, List<String>> mainNames) {
+        this(directory, discoveredKeys, aliases, presetAliases, mainNames, null);
+    }
+
+    LitematicaCustomAliases(Path directory, List<String> discoveredKeys, Map<String, List<String>> aliases,
+                            Map<String, List<String>> presetAliases, Map<String, List<String>> mainNames,
+                            Map<String, List<String>> previouslySaved) {
         this.file = directory.resolve(FILE_NAME);
         this.discoveredKeys = List.copyOf(discoveredKeys);
         this.presetAliases = presetAliases;
-        if (!Files.exists(file)) return;
+        if (previouslySaved != null) savedAliases.putAll(previouslySaved);
+        // Older versions have no ownership snapshot. Missing JSON must not revive cached personal words.
+        else savedAliases.putAll(personalAliases(aliases));
+        if (refreshDeletedFile(aliases)) return;
         try (var reader = Files.newBufferedReader(file, StandardCharsets.UTF_8)) {
             var object = JsonParser.parseReader(reader).getAsJsonObject();
             var available = SparkFixConfig.availableOptionKeys(discoveredKeys);
@@ -60,6 +73,8 @@ final class LitematicaCustomAliases {
                     else values.putIfAbsent(key, cleaned);
                 }
             }
+            savedAliases.clear();
+            savedAliases.putAll(values);
             for (String key : discoveredKeys) {
                 Set<String> packaged = names(presetAliases.getOrDefault(key, List.of()));
                 List<String> merged = new ArrayList<>();
@@ -76,7 +91,66 @@ final class LitematicaCustomAliases {
         }
     }
 
+    /** Check at editing/closing boundaries, without polling the filesystem during rendering. */
+    boolean refreshDeletedFile(Map<String, List<String>> aliases) {
+        if (deletionHandled || !Files.notExists(file)) return false;
+        Map<String, List<String>> removedAliases = personalAliases(savedAliases);
+        removedAliases.forEach((key, entries) -> {
+            List<String> removed = new ArrayList<>(deletedAliases.getOrDefault(key, List.of()));
+            removed.addAll(entries);
+            deletedAliases.put(key, List.copyOf(removed));
+        });
+        removeSavedAliases(aliases, removedAliases, newAliases);
+        values.clear();
+        savedAliases.clear();
+        deletionHandled = true;
+        writable = true;
+        return true;
+    }
+
+    private Map<String, List<String>> personalAliases(Map<String, List<String>> source) {
+        var available = SparkFixConfig.availableOptionKeys(discoveredKeys);
+        Map<String, List<String>> result = new LinkedHashMap<>();
+        source.forEach((key, entries) -> {
+            String resolved = available.resolve(key);
+            Set<String> packaged = names(presetAliases.getOrDefault(resolved == null ? key : resolved, List.of()));
+            putAliases(result, key, entries.stream()
+                    .filter(alias -> !packaged.contains(LitematicaAliasPresets.normalizedName(alias))).toList());
+        });
+        return result;
+    }
+
+    void recordEdit(String key, List<String> before, List<String> after) {
+        Set<String> oldNames = names(before);
+        List<String> additions = new ArrayList<>(newAliases.getOrDefault(key, List.of()));
+        after.stream().filter(alias -> !oldNames.contains(LitematicaAliasPresets.normalizedName(alias)))
+                .forEach(additions::add);
+        putAliases(newAliases, key, List.copyOf(additions));
+    }
+
+    Map<String, List<String>> savedAliases() { return new LinkedHashMap<>(savedAliases); }
+
+    Map<String, List<String>> deletedAliases() { return new LinkedHashMap<>(deletedAliases); }
+
+    static void removeSavedAliases(Map<String, List<String>> target, Map<String, List<String>> saved) {
+        removeSavedAliases(target, saved, Map.of());
+    }
+
+    private static void removeSavedAliases(Map<String, List<String>> target, Map<String, List<String>> saved,
+                                          Map<String, List<String>> additions) {
+        var available = SparkFixConfig.availableOptionKeys(new ArrayList<>(target.keySet()));
+        saved.forEach((oldKey, entries) -> {
+            String key = available.resolve(oldKey);
+            if (key == null) return;
+            Set<String> removed = names(entries);
+            removed.removeAll(names(additions.getOrDefault(key, List.of())));
+            putAliases(target, key, target.getOrDefault(key, List.of()).stream()
+                    .filter(alias -> !removed.contains(LitematicaAliasPresets.normalizedName(alias))).toList());
+        });
+    }
+
     void save(Map<String, List<String>> aliases, Map<String, List<String>> mainNames) {
+        refreshDeletedFile(aliases);
         if (!writable) return;
         // Retain entries for temporarily unavailable mods, but export only personal words for loaded options.
         for (String key : discoveredKeys) {
@@ -100,6 +174,10 @@ final class LitematicaCustomAliases {
             } catch (AtomicMoveNotSupportedException exception) {
                 Files.move(temporary, file, StandardCopyOption.REPLACE_EXISTING);
             }
+            savedAliases.clear();
+            savedAliases.putAll(values);
+            newAliases.clear();
+            deletionHandled = false;
         } catch (IOException | RuntimeException exception) {
             SparkFixClient.LOGGER.warn("Could not save custom Litematica aliases", exception);
         } finally {

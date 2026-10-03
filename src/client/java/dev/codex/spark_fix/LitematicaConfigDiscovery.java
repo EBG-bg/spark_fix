@@ -257,7 +257,8 @@ final class LitematicaConfigDiscovery {
     }
 
     static String name(Object option) {
-        return stringCall(option, "getTranslatedName", "getPrettyName", "getName");
+        // Addons can translate only the native GUI accessor and leave getTranslatedName raw.
+        return stringCall(option, "getConfigGuiDisplayName", "getTranslatedName", "getPrettyName", "getName");
     }
 
     static String stableName(Object option) {
