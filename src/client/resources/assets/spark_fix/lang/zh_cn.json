@@ -11,6 +11,7 @@
   "error.spark_fix.rei_transfer.limit": "REI 摆放达到点击上限（%s），已安全停止",
   "error.spark_fix.rei_transfer.menu_changed": "摆放过程中打开的容器发生了变化",
   "error.spark_fix.rei_transfer.overlap": "当前容器将同一槽位同时作为输入槽和背包槽",
+  "error.spark_fix.rei_transfer.busy": "配方摆放仍在收尾，请稍后再试",
   "gui.spark_fix.xaero.delete_deathpoints": "删除全部死亡点",
   "gui.spark_fix.xaero.delete_deathpoints_hint": "删除上方所选世界/维度中所有集合的 Xaero 自动死亡点（包括旧死亡点），并立即保存。保留普通和第三方路径点。",
   "gui.spark_fix.xaero.deathpoints_deleted": "已删除 %s 个自动死亡路径点",

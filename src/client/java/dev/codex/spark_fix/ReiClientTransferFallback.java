@@ -6,6 +6,7 @@ import me.shedaniel.rei.api.common.transfer.ItemRecipeFinder;
 import me.shedaniel.rei.api.common.transfer.info.stack.PlayerInventorySlotAccessor;
 import me.shedaniel.rei.api.common.transfer.info.stack.SlotAccessor;
 import me.shedaniel.rei.api.common.transfer.info.stack.VanillaSlotAccessor;
+import net.fabricmc.fabric.api.client.event.lifecycle.v1.ClientTickEvents;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.multiplayer.MultiPlayerGameMode;
 import net.minecraft.network.chat.Component;
@@ -24,6 +25,10 @@ import java.util.Set;
 
 public final class ReiClientTransferFallback {
     private static final Logger LOGGER = LoggerFactory.getLogger("spark_fix/rei-transfer");
+    private static final long TRANSFER_COOLDOWN_NANOS = 200_000_000L;
+    private static boolean tickRegistered;
+    private static TransferOperation activeTransfer;
+    private static long transferCooldownUntil;
 
     private ReiClientTransferFallback() {
     }
@@ -32,6 +37,7 @@ public final class ReiClientTransferFallback {
             Iterable<SlotAccessor> inventorySlots,
             List<InputIngredient<ItemStack>> inputs
     ) {
+        ensureTickRegistered();
         ItemRecipeFinder finder = createFinder(inventorySlots);
         return finder.findRecipe(toOptions(inputs), 1, null);
     }
@@ -42,6 +48,7 @@ public final class ReiClientTransferFallback {
             Iterable<SlotAccessor> inputSlots,
             Iterable<SlotAccessor> inventorySlots
     ) {
+        ensureTickRegistered();
         Minecraft minecraft = context.getMinecraft();
         Player player = minecraft.player;
         MultiPlayerGameMode gameMode = minecraft.gameMode;
@@ -51,6 +58,9 @@ public final class ReiClientTransferFallback {
         }
         if (menu != player.containerMenu) {
             return failed("error.spark_fix.rei_transfer.menu_changed");
+        }
+        if (activeTransfer != null || System.nanoTime() < transferCooldownUntil) {
+            return failed("error.spark_fix.rei_transfer.busy");
         }
 
         List<SlotAccessor> inputAccessors = snapshot(inputSlots);
@@ -71,39 +81,55 @@ public final class ReiClientTransferFallback {
 
         TransferSession session = new TransferSession(minecraft, gameMode, player, menu);
         minecraft.setScreenAndShow(context.getContainerScreen());
-        if (!parkCursor(session, inventoryIndices)) {
-            return failure(session, "error.spark_fix.rei_transfer.cursor");
-        }
-        if (!clearInputs(session, inputIndices)) {
-            return failure(session, "error.spark_fix.rei_transfer.inventory_full");
-        }
+        activeTransfer = new TransferOperation(
+                session,
+                inputIndices,
+                inventoryIndices,
+                inputs,
+                inventoryAccessors,
+                targetIndices,
+                context.isStackedCrafting()
+        );
+        return TransferHandler.Result.createSuccessful();
+    }
 
-        TransferPlan plan = createPlan(menu, inputs, inventoryAccessors, targetIndices, context.isStackedCrafting());
-        if (plan == null) {
-            return TransferHandler.Result.createFailed(Component.translatable("error.rei.not.enough.materials"));
+    private static void ensureTickRegistered() {
+        if (!tickRegistered) {
+            // The REI handler is invoked from a screen event. Keep the actual
+            // container clicks on later client ticks so a Shift-click cannot
+            // send a whole recipe before the server has observed the previous
+            // click. Registration is lazy so the optional integration has no
+            // Fabric API side effect when REI is absent.
+            ClientTickEvents.END_CLIENT_TICK.register(ReiClientTransferFallback::tick);
+            tickRegistered = true;
         }
-        if (plan.placements().isEmpty()) {
-            return TransferHandler.Result.createSuccessful();
-        }
+    }
 
+    private static void tick(Minecraft minecraft) {
+        TransferOperation operation = activeTransfer;
+        if (operation == null || operation.session.minecraft != minecraft) {
+            return;
+        }
+        Progress progress;
         try {
-            for (Placement placement : plan.placements()) {
-                if (!placeItems(session, inventoryIndices, placement)) {
-                    cleanupCursor(session, inventoryIndices);
-                    return failure(session, "error.spark_fix.rei_transfer.rejected");
-                }
-            }
+            progress = operation.step();
         } catch (RuntimeException exception) {
             LOGGER.error("Client-side REI transfer failed", exception);
-            cleanupCursor(session, inventoryIndices);
-            return failure(session, "error.spark_fix.rei_transfer.failed");
+            operation.failure = "error.spark_fix.rei_transfer.failed";
+            progress = Progress.FAILURE;
         }
-
-        if (!session.isCurrent() || !menu.getCarried().isEmpty()) {
-            cleanupCursor(session, inventoryIndices);
-            return failure(session, "error.spark_fix.rei_transfer.failed");
+        if (progress == Progress.CONTINUE) {
+            return;
         }
-        return TransferHandler.Result.createSuccessful();
+        if (progress == Progress.FAILURE) {
+            cleanupCursor(operation.session, operation.inventoryIndices);
+            Component message = operation.session.limitReached
+                    ? Component.translatable("error.spark_fix.rei_transfer.limit", operation.session.maxClicks)
+                    : Component.translatable(operation.failure);
+            operation.session.player.sendOverlayMessage(message);
+        }
+        activeTransfer = null;
+        transferCooldownUntil = System.nanoTime() + TRANSFER_COOLDOWN_NANOS;
     }
 
     private static TransferPlan createPlan(
@@ -280,6 +306,14 @@ public final class ReiClientTransferFallback {
             TransferSession session,
             List<Integer> inventoryIndices
     ) {
+        return parkCursor(session, inventoryIndices, false);
+    }
+
+    private static boolean parkCursor(
+            TransferSession session,
+            List<Integer> inventoryIndices,
+            boolean cleanup
+    ) {
         AbstractContainerMenu menu = session.menu;
         while (!menu.getCarried().isEmpty()) {
             if (!session.isCurrent()) {
@@ -287,7 +321,7 @@ public final class ReiClientTransferFallback {
             }
             ItemStack carried = menu.getCarried().copy();
             int destination = findCursorDestination(menu, inventoryIndices, carried);
-            if (destination < 0 || !session.click(destination, 0, ContainerInput.PICKUP)) {
+            if (destination < 0 || !session.click(destination, 0, ContainerInput.PICKUP, cleanup)) {
                 return false;
             }
             ItemStack carriedAfter = menu.getCarried();
@@ -302,7 +336,10 @@ public final class ReiClientTransferFallback {
 
     private static void cleanupCursor(TransferSession session, List<Integer> inventoryIndices) {
         if (session.isCurrent() && !session.menu.getCarried().isEmpty()) {
-            parkCursor(session, inventoryIndices);
+            // Cleanup must still be allowed when the normal click budget was
+            // exhausted after picking up a stack. Losing the carried stack is
+            // worse than spending one final recovery click.
+            parkCursor(session, inventoryIndices, true);
         }
     }
 
@@ -451,6 +488,115 @@ public final class ReiClientTransferFallback {
     private record TransferPlan(List<Placement> placements) {
     }
 
+    private enum Progress {
+        CONTINUE,
+        SUCCESS,
+        FAILURE
+    }
+
+    private static final class TransferOperation {
+        private final TransferSession session;
+        private final List<Integer> inputIndices;
+        private final List<Integer> inventoryIndices;
+        private final List<InputIngredient<ItemStack>> inputs;
+        private final List<SlotAccessor> inventoryAccessors;
+        private final List<Integer> targetIndices;
+        private final boolean stacked;
+        private Phase phase = Phase.PARK_CURSOR;
+        private TransferPlan plan;
+        private int placementIndex;
+        private String failure = "error.spark_fix.rei_transfer.failed";
+
+        private TransferOperation(
+                TransferSession session,
+                List<Integer> inputIndices,
+                List<Integer> inventoryIndices,
+                List<InputIngredient<ItemStack>> inputs,
+                List<SlotAccessor> inventoryAccessors,
+                List<Integer> targetIndices,
+                boolean stacked
+        ) {
+            this.session = session;
+            this.inputIndices = List.copyOf(inputIndices);
+            this.inventoryIndices = List.copyOf(inventoryIndices);
+            this.inputs = List.copyOf(inputs);
+            this.inventoryAccessors = List.copyOf(inventoryAccessors);
+            this.targetIndices = List.copyOf(targetIndices);
+            this.stacked = stacked;
+        }
+
+        private Progress step() {
+            if (!session.isCurrent()) {
+                failure = "error.spark_fix.rei_transfer.menu_changed";
+                return Progress.FAILURE;
+            }
+            switch (phase) {
+                case PARK_CURSOR -> {
+                    if (!parkCursor(session, inventoryIndices)) {
+                        failure = "error.spark_fix.rei_transfer.cursor";
+                        return Progress.FAILURE;
+                    }
+                    phase = Phase.CLEAR_INPUTS;
+                    return Progress.CONTINUE;
+                }
+                case CLEAR_INPUTS -> {
+                    if (!clearInputs(session, inputIndices)) {
+                        failure = "error.spark_fix.rei_transfer.inventory_full";
+                        return Progress.FAILURE;
+                    }
+                    phase = Phase.BUILD_PLAN;
+                    return Progress.CONTINUE;
+                }
+                case BUILD_PLAN -> {
+                    plan = createPlan(session.menu, inputs, inventoryAccessors, targetIndices, stacked);
+                    if (plan == null) {
+                        failure = "error.rei.not.enough.materials";
+                        return Progress.FAILURE;
+                    }
+                    if (plan.placements().isEmpty()) {
+                        return complete();
+                    }
+                    phase = Phase.PLACE;
+                    // The cursor has already been parked and the old inputs
+                    // have been cleared on earlier ticks. Once the plan is
+                    // ready, perform all recipe placements in this tick so a
+                    // normal transfer remains effectively instant.
+                    return placeRemaining();
+                }
+                case PLACE -> {
+                    return placeRemaining();
+                }
+            }
+            return Progress.FAILURE;
+        }
+
+        private Progress placeRemaining() {
+            while (placementIndex < plan.placements().size()) {
+                if (!placeItems(session, inventoryIndices, plan.placements().get(placementIndex))) {
+                    failure = "error.spark_fix.rei_transfer.rejected";
+                    return Progress.FAILURE;
+                }
+                placementIndex++;
+            }
+            return complete();
+        }
+
+        private Progress complete() {
+            if (!session.isCurrent() || !session.menu.getCarried().isEmpty()) {
+                failure = "error.spark_fix.rei_transfer.failed";
+                return Progress.FAILURE;
+            }
+            return Progress.SUCCESS;
+        }
+    }
+
+    private enum Phase {
+        PARK_CURSOR,
+        CLEAR_INPUTS,
+        BUILD_PLAN,
+        PLACE
+    }
+
     private static final class TransferSession {
         private final Minecraft minecraft;
         private final MultiPlayerGameMode gameMode;
@@ -483,15 +629,21 @@ public final class ReiClientTransferFallback {
         }
 
         private boolean click(int slot, int button, ContainerInput input) {
+            return click(slot, button, input, false);
+        }
+
+        private boolean click(int slot, int button, ContainerInput input, boolean cleanup) {
             if (!isCurrent() || slot < 0 || slot >= this.menu.slots.size()) {
                 return false;
             }
-            if (this.clicks >= this.maxClicks) {
+            if (!cleanup && this.clicks >= this.maxClicks) {
                 this.limitReached = true;
                 return false;
             }
 
-            this.clicks++;
+            if (!cleanup) {
+                this.clicks++;
+            }
             this.gameMode.handleContainerInput(this.containerId, slot, button, input, this.player);
             return true;
         }

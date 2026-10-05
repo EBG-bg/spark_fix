@@ -6,6 +6,11 @@
                    "IntegratedServerThreadFixMixin",
                    "ClientWaypointManagerFixMixin",
                    "PrinterMovementPacketFixMixin",
+                   "PrinterInvalidBoundsMixin",
+                   "PrinterScanBoundsMixin",
+                   "PrinterIteratorBudgetMixin",
+                   "PrinterScanPhaseMixin",
+                   "PrinterConfigSaveMixin",
                    "BoatHandsBusyMixin",
                    "BoatConsumableUseMixin",
                    "BoatConsumableRendererMixin"

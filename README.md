@@ -2,7 +2,7 @@
 
 面向 **Minecraft 26.2 Fabric 客户端**的修复模组，源自 `warmaislandfix`，最初用于 [沃玛岛服务器](https://www.warma.fans/mc)。未触发问题时尽量保持原版和原模组行为。
 
-当前发布版本为 **2.1.4**。
+当前发布版本为 **2.1.5**。
 
 ## 已包含功能
 
@@ -15,16 +15,18 @@
 7. 恢复 REI 在插件服上的一键配方摆放
 8. 支持划船使用物品
 9. 一键删除 Xaero 当前所选世界/维度的全部自动死亡路径点
+10. 修复三改打印机卡死
+11. 切换打印机版本时保留设置
 
 **整合功能：**
 
-10. 已整合 `adofaigo` 模组
-11. 已整合 `REI Recipe Bridge` 模组
-12. 可选 `better litematica setting`（投影设置）
+12. 已整合 `adofaigo` 模组
+13. 已整合 `REI Recipe Bridge` 模组
+14. 可选 `better litematica setting`（投影设置）
 
 ## 安装
 
-[下载 spark_fix-2.1.4.jar](https://github.com/EBG-bg/spark_fix/releases/download/v2.1.4/spark_fix-2.1.4.jar) · [发布页](https://github.com/EBG-bg/spark_fix/releases/tag/v2.1.4)
+[下载 spark_fix-2.1.5.jar](https://github.com/EBG-bg/spark_fix/releases/download/v2.1.5/spark_fix-2.1.5.jar) · [发布页](https://github.com/EBG-bg/spark_fix/releases/tag/v2.1.5)
 
 1. 使用 Java 25，安装 Minecraft 26.2、Fabric Loader 0.19.3 或更高版本，以及对应版本的 Fabric API。
 2. 将 JAR 放入客户端 `mods` 目录；停用旧的 `warmaislandfix`、独立版 `adofaigo` 和 `REI Recipe Bridge`。
@@ -64,9 +66,13 @@ adofai 启动按钮支持右键设置 0～60 秒启动延迟；启动后在物�
 
 关闭投影设置页时统一保存选项、布局和别名。
 
+打印机设置按模组来源自动区分分支，切换时恢复各分支最后保存的设置；同一分支升级继续使用当前配置。
+
 ### 配置文件与别名包
 
 主配置保存在实例的 `config/spark_fix.properties`；个人别名保存在 `config/spark_fix/常用别名_自定义.json`。
+
+打印机分支设置保存在 `config/spark_fix/printer-settings.json`，当前设置仍使用原打印机的 `config/litematica-printer.json`。
 
 将 [常用别名_默认_蓝图.json](_artifacts/config-presets/2026-09-27/常用别名_默认_蓝图.json) 放入 `config/spark_fix/` 可补充“蓝图”等搜索词。别名包只追加别名，不覆盖主名和设置值；自制包格式见 [别名包说明](_artifacts/config-presets/README.md)。
 
@@ -80,7 +86,7 @@ adofai 启动按钮支持右键设置 0～60 秒启动延迟；启动后在物�
 git diff --check
 ```
 
-成品位于 `build/libs/spark_fix-2.1.4.jar`。
+成品位于 `build/libs/spark_fix-2.1.5.jar`。
 
 ## 许可证
 

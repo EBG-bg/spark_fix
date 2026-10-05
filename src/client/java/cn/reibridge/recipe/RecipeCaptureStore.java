@@ -28,6 +28,7 @@ import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
 import java.util.ArrayList;
 import java.util.HexFormat;
+import java.util.HashMap;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -41,7 +42,10 @@ public final class RecipeCaptureStore {
 
     private static ClientPacketListener loadedConnection;
     private static String loadedServer;
-    private static final Map<Integer, ClientboundRecipeBookAddPacket.Entry> entries = new LinkedHashMap<>();
+    /** Cached by recipe contents rather than RecipeDisplayId.index. */
+    private static final Map<String, ClientboundRecipeBookAddPacket.Entry> entries = new LinkedHashMap<>();
+    /** Indexes are only meaningful for the currently connected server session. */
+    private static final Map<Integer, String> currentIndexes = new HashMap<>();
     private static int lastReceivedCount;
     private static int lastMergedCount;
     private static int lastRegisteredCount;
@@ -59,11 +63,30 @@ public final class RecipeCaptureStore {
 
         boolean firstPacket = loadedConnection != connection;
         loadedConnection = connection;
+        if (packet.replace()) {
+            // A replace packet is a fresh index table for this connection.
+            // Keep stable cached entries, but never use indexes from an older
+            // packet when processing later remove messages.
+            currentIndexes.clear();
+        }
         int cachedBefore = entries.size();
-        LinkedHashMap<Integer, ClientboundRecipeBookAddPacket.Entry> merged = new LinkedHashMap<>(entries);
+        Map<Integer, String> incomingIndexes = new HashMap<>();
         for (ClientboundRecipeBookAddPacket.Entry entry : packet.entries()) {
-            merged.put(entry.contents().id().index(), entry);
-            entries.put(entry.contents().id().index(), quiet(entry));
+            incomingIndexes.put(entry.contents().id().index(), stableKey(entry.contents()));
+        }
+        // An index can be reused by a server after its recipe list changes.
+        // Drop an old entry occupying a current index when its contents differ;
+        // otherwise an old recipe could be injected under the new recipe's ID.
+        entries.entrySet().removeIf(entry -> {
+            String incomingKey = incomingIndexes.get(entry.getValue().contents().id().index());
+            return incomingKey != null && !incomingKey.equals(entry.getKey());
+        });
+        LinkedHashMap<String, ClientboundRecipeBookAddPacket.Entry> merged = new LinkedHashMap<>(entries);
+        for (ClientboundRecipeBookAddPacket.Entry entry : packet.entries()) {
+            String key = stableKey(entry.contents());
+            merged.put(key, entry);
+            entries.put(key, quiet(entry));
+            currentIndexes.put(entry.contents().id().index(), key);
         }
         lastReceivedCount = packet.entries().size();
         lastMergedCount = merged.size();
@@ -91,10 +114,13 @@ public final class RecipeCaptureStore {
         if (!BridgeConfig.get().captureUnlockedRecipes || !load(connection)) {
             return;
         }
-        boolean changed = packet.recipes().stream()
-                .map(RecipeDisplayId::index)
-                .map(entries::remove)
-                .anyMatch(entry -> entry != null);
+        // Do not use anyMatch here: it short-circuits after the first removed
+        // entry and leaves the remaining recipe displays in the cache.
+        boolean changed = false;
+        for (RecipeDisplayId recipe : packet.recipes()) {
+            String key = currentIndexes.remove(recipe.index());
+            changed |= key != null && entries.remove(key) != null;
+        }
         if (changed) {
             save(connection);
             LOGGER.info(
@@ -118,10 +144,12 @@ public final class RecipeCaptureStore {
         boolean changed = false;
         for (RecipeCollection collection : minecraft.player.getRecipeBook().getCollections()) {
             for (RecipeDisplayEntry display : collection.getRecipes()) {
+                String key = stableKey(display);
                 ClientboundRecipeBookAddPacket.Entry previous = entries.put(
-                        display.id().index(),
+                        key,
                         new ClientboundRecipeBookAddPacket.Entry(display, false, false)
                 );
+                currentIndexes.put(display.id().index(), key);
                 changed |= previous == null || !previous.contents().equals(display);
             }
         }
@@ -189,6 +217,7 @@ public final class RecipeCaptureStore {
         }
 
         entries.clear();
+        currentIndexes.clear();
         loadedServer = server;
         loadedConnection = null;
         Path path = cachePath(server);
@@ -206,7 +235,7 @@ public final class RecipeCaptureStore {
                 RegistryFriendlyByteBuf buffer = new RegistryFriendlyByteBuf(bytes, connection.registryAccess());
                 ClientboundRecipeBookAddPacket packet = ClientboundRecipeBookAddPacket.STREAM_CODEC.decode(buffer);
                 for (ClientboundRecipeBookAddPacket.Entry entry : packet.entries()) {
-                    entries.put(entry.contents().id().index(), quiet(entry));
+                    entries.put(stableKey(entry.contents()), quiet(entry));
                 }
                 LOGGER.info(
                         "Loaded {} cached recipe displays for {}",
@@ -252,6 +281,18 @@ public final class RecipeCaptureStore {
 
     private static ClientboundRecipeBookAddPacket.Entry quiet(ClientboundRecipeBookAddPacket.Entry entry) {
         return new ClientboundRecipeBookAddPacket.Entry(entry.contents(), false, false);
+    }
+
+    private static String stableKey(RecipeDisplayEntry entry) {
+        // RecipeDisplay implementations and their slot displays are records in
+        // the 26.2 protocol, so their value-based toString output excludes the
+        // unstable display index while retaining ingredients, result and the
+        // crafting requirements that distinguish recipe variants.
+        return entry.display().getClass().getName()
+                + "|display=" + entry.display()
+                + "|group=" + entry.group()
+                + "|category=" + entry.category()
+                + "|requirements=" + entry.craftingRequirements();
     }
 
     private static String currentServer(ClientPacketListener connection) {

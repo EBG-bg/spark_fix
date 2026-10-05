@@ -13,16 +13,28 @@ import net.minecraft.network.chat.Component;
 final class SparkFixConfigScreen extends Screen {
     private final Screen parent;
     private EditBox maxClicksField;
+    /**
+     * The text currently being edited, kept separately from the persisted
+     * value so a widget rebuild (for example after a resize) does not discard
+     * an unsaved draft.
+     */
+    private String maxClicksDraft;
     private boolean scanAllTranslations;
 
     SparkFixConfigScreen(Screen parent) {
         super(Component.translatable("config.spark_fix.title"));
         this.parent = parent;
+        this.maxClicksDraft = Integer.toString(SparkFixConfig.maxReiClicks());
         this.scanAllTranslations = SparkFixConfig.scanAllTranslations();
     }
 
     @Override
     protected void init() {
+        // Screen.init can run more than once. Capture the old widget before it
+        // is replaced so the latest unsaved text survives the rebuild.
+        if (this.maxClicksField != null) {
+            this.maxClicksDraft = this.maxClicksField.getValue();
+        }
         int center = this.width / 2;
         int top = Math.max(42, this.height / 2 - 68);
         this.addRenderableWidget(Button.builder(
@@ -34,7 +46,8 @@ final class SparkFixConfigScreen extends Screen {
         this.maxClicksField = this.addRenderableWidget(new EditBox(this.font, center - 100, top + 18, 200, 20,
                 Component.translatable("config.spark_fix.rei_max_clicks")));
         this.maxClicksField.setMaxLength(5);
-        this.maxClicksField.setValue(Integer.toString(SparkFixConfig.maxReiClicks()));
+        this.maxClicksField.setValue(this.maxClicksDraft);
+        this.maxClicksField.setResponder(value -> this.maxClicksDraft = value);
         this.addRenderableWidget(CycleButton.booleanBuilder(Component.translatable("config.spark_fix.on"),
                 Component.translatable("config.spark_fix.off"), this.scanAllTranslations)
                 .create(center - 100, top + 54, 200, 20,
@@ -71,7 +84,8 @@ final class SparkFixConfigScreen extends Screen {
 
     private void saveAndClose() {
         int maxClicks;
-        try { maxClicks = Integer.parseInt(this.maxClicksField.getValue().trim()); }
+        this.maxClicksDraft = this.maxClicksField.getValue();
+        try { maxClicks = Integer.parseInt(this.maxClicksDraft.trim()); }
         catch (NumberFormatException exception) { maxClicks = SparkFixConfig.DEFAULT_MAX_REI_CLICKS; }
         SparkFixConfig.setMaxReiClicks(maxClicks);
         SparkFixConfig.setScanAllTranslations(this.scanAllTranslations);
