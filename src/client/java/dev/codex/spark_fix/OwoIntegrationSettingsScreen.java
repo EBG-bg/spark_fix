@@ -38,6 +38,7 @@ final class OwoIntegrationSettingsScreen extends BaseOwoScreen<FlowLayout> {
     private boolean adofaigoExpanded;
     private boolean reiExpanded;
     private boolean litematicaExpanded;
+    private boolean structureFinderExpanded;
     private boolean rebuildQueued;
     private int panelWidth;
     private SettingsScroll scroll;
@@ -46,6 +47,7 @@ final class OwoIntegrationSettingsScreen extends BaseOwoScreen<FlowLayout> {
     private final IntegrationSettingsStyle.HoverFade adofaigoCardFade = new IntegrationSettingsStyle.HoverFade();
     private final IntegrationSettingsStyle.HoverFade reiCardFade = new IntegrationSettingsStyle.HoverFade();
     private final IntegrationSettingsStyle.HoverFade litematicaCardFade = new IntegrationSettingsStyle.HoverFade();
+    private final IntegrationSettingsStyle.HoverFade structureFinderCardFade = new IntegrationSettingsStyle.HoverFade();
 
     OwoIntegrationSettingsScreen(Screen parent) {
         super(Component.translatable("config.spark_fix.integration_title"));
@@ -171,7 +173,27 @@ final class OwoIntegrationSettingsScreen extends BaseOwoScreen<FlowLayout> {
             }
             content.child(details);
         }
-        if (!state.adofaigo() && !state.reiRecipeBridge() && !state.litematica()) {
+        content.child(module("Structure Finder", "config.spark_fix.structure_finder_summary", state.structureFinder(),
+                state.structureFinderPendingRestart(), structureFinderExpanded, () -> {
+                    structureFinderExpanded = !structureFinderExpanded;
+                    queueRebuild();
+                }, () -> {
+                    state.structureFinder(!state.structureFinder());
+                    queueRebuild();
+                }));
+        if (state.structureFinder() && structureFinderExpanded) {
+            FlowLayout details = details();
+            if (!SparkFixConfig.structureFinderEnabledAtStartup()) {
+                details.child(label(Component.translatable("config.spark_fix.restart_required"), 0xFFFFFF55));
+            } else {
+                ActionComponent open = action(Component.translatable("gui.spark_fix.structure_finder.open"),
+                        () -> minecraft.setScreenAndShow(new StructureFinderScreen(this)), panelWidth - 48, 24);
+                open.horizontalSizing(Sizing.fill());
+                details.child(open);
+            }
+            content.child(details);
+        }
+        if (!state.adofaigo() && !state.reiRecipeBridge() && !state.litematica() && !state.structureFinder()) {
             content.child(label(Component.translatable("config.spark_fix.disabled_until_enabled"),
                     IntegrationSettingsStyle.MUTED));
         }
@@ -220,7 +242,8 @@ final class OwoIntegrationSettingsScreen extends BaseOwoScreen<FlowLayout> {
         summary.maxWidth(Math.max(80, panelWidth - (compact ? 56 : 206)));
         text.child(summary);
         boolean litematica = name.equals("Litematica");
-        IntegrationModuleIcon icon = new IntegrationModuleIcon(
+        boolean structureFinder = name.equals("Structure Finder");
+        BaseUIComponent icon = structureFinder ? new StructureFinderModuleIcon() : new IntegrationModuleIcon(
                 name.equals("adofaigo") ? ADOFAIGO_ICON : litematica
                         ? state.litematicaInstalled() ? LITEMATICA_ICON : null : REI_BRIDGE_ICON,
                 name.equals("adofaigo") || litematica ? 32 : 512);
@@ -238,7 +261,8 @@ final class OwoIntegrationSettingsScreen extends BaseOwoScreen<FlowLayout> {
         ActionComponent button = action(Component.translatable("config.spark_fix.enable_mod"), toggle, 104, 24);
         button.selected = selected;
         button.outlined = true;
-        var cardFade = name.equals("adofaigo") ? adofaigoCardFade : litematica ? litematicaCardFade : reiCardFade;
+        var cardFade = name.equals("adofaigo") ? adofaigoCardFade : litematica ? litematicaCardFade
+                : structureFinder ? structureFinderCardFade : reiCardFade;
         card.surface((graphics, component) -> {
             boolean hovered = selected && component.isInBoundingBox(pointerX, pointerY)
                     && graphics.containsPointInScissor(pointerX, pointerY)
@@ -255,7 +279,8 @@ final class OwoIntegrationSettingsScreen extends BaseOwoScreen<FlowLayout> {
         controls.child(button);
         if (selected) {
             String disclosureKey = name.equals("adofaigo") ? "config.spark_fix.adofaigo_section"
-                    : litematica ? "config.spark_fix.litematica_section" : "config.spark_fix.rei_bridge_section";
+                    : litematica ? "config.spark_fix.litematica_section"
+                    : structureFinder ? "config.spark_fix.structure_finder_section" : "config.spark_fix.rei_bridge_section";
             ActionComponent disclosure = action(Component.translatable(disclosureKey), fold, 24, 24);
             disclosure.expanded = expanded;
             disclosure.tooltip(disclosure.message);
@@ -374,6 +399,25 @@ final class OwoIntegrationSettingsScreen extends BaseOwoScreen<FlowLayout> {
 
     @Override
     public void onClose() { saveAndClose(); }
+
+    private static final class StructureFinderModuleIcon extends BaseUIComponent {
+        private StructureFinderModuleIcon() { sizing(Sizing.fixed(32), Sizing.fixed(32)); }
+
+        @Override public void draw(OwoUIGraphics graphics, int mouseX, int mouseY, float partialTicks, float delta) {
+            // Do not construct an ItemStack while owo is building its component tree:
+            // 26.2 can still have unbound item components at this point. The compact
+            // cracked-brick mark keeps the integration page safe during early init.
+            int left = x() + 4;
+            int top = y() + 4;
+            graphics.fill(left, top, left + 24, top + 24, 0xFF7C8794);
+            graphics.fill(left + 2, top + 2, left + 22, top + 22, 0xFFB3BBC4);
+            int crack = 0xFF53606D;
+            graphics.fill(left + 5, top + 5, left + 7, top + 11, crack);
+            graphics.fill(left + 7, top + 10, left + 12, top + 12, crack);
+            graphics.fill(left + 12, top + 12, left + 14, top + 18, crack);
+            graphics.fill(left + 14, top + 17, left + 20, top + 19, crack);
+        }
+    }
 
     /** owo routes drag and keyboard events to the focused component, not the clicked widget. */
     private static final class FocusableWidgetComponent extends VanillaWidgetComponent {

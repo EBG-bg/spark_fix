@@ -571,7 +571,7 @@ class VanillaLitematicaSettingsScreen extends Screen {
                 if (category != null) label = label.copy().append(" · ").append(category.label());
                 var lines = font.split(label, Math.max(1, availableWidth - 16));
                 int headingHeight = Math.max(1, lines.size()) * font.lineHeight + 10;
-                divider = new GroupDivider(grouping, label, top, headingHeight);
+                divider = new GroupDivider(grouping, lines, top, headingHeight);
                 groupDividers.add(divider);
                 java.util.Arrays.fill(columnBottom, top + headingHeight);
                 previousGroup = grouping;
@@ -650,7 +650,8 @@ class VanillaLitematicaSettingsScreen extends Screen {
         int editorY = Math.max(14 + textHeight, infoY + (hasHotkey && toolsInHeader ? 19 : 18)) + 4;
         int logicalHeight = Math.max(44, editorY + editorHeight + 3);
         return new Card(option, x, y, width, (int) Math.ceil(logicalHeight * scale), favorite,
-                titleWidth, aliasX, aliasY, infoX, infoY, headerToolsX, logicalWidth, logicalHeight, editorY, scale);
+                titleWidth, List.copyOf(lines), aliasX, aliasY, infoX, infoY, headerToolsX,
+                logicalWidth, logicalHeight, editorY, scale);
     }
 
     private static boolean hasValueReset(Object option) {
@@ -957,6 +958,7 @@ class VanillaLitematicaSettingsScreen extends Screen {
         graphics.fill(panelLeft + 18, othersHeaderY - 7,
                 panelLeft + panelWidth - 18, othersHeaderY - 6, 0x88B7D2FB);
         for (Card card : cards) {
+            if (!isCardVisible(card)) continue;
             if (card.option.key().equals(draggingKey)) {
                 IntegrationSettingsStyle.roundedRect(graphics, card.x, card.y, card.width, card.height, 8, 0x16000000);
                 IntegrationSettingsStyle.roundedRect(graphics, card.x + 6, card.y + 2,
@@ -969,6 +971,7 @@ class VanillaLitematicaSettingsScreen extends Screen {
             drawCard(graphics, card, card.x, card.y, card.scale * card.displayScale, hovered, false);
         }
         for (EmptyState state : emptyStates) {
+            if (state.y + font.lineHeight <= cardsViewportTop() || state.y >= contentBottom) continue;
             graphics.text(font, state.message, panelLeft + 20, state.y, IntegrationSettingsStyle.MUTED, false);
         }
         for (GroupDivider divider : groupDividers) {
@@ -976,7 +979,9 @@ class VanillaLitematicaSettingsScreen extends Screen {
             int x = panelLeft + 16;
             IntegrationSettingsStyle.roundedRect(graphics, x, divider.y + 1, panelWidth - 32,
                     divider.height - 4, 6, 0x50203550);
-            graphics.textWithWordWrap(font, divider.label, x + 8, divider.y + 4, panelWidth - 48, 0xFFBBD6FF);
+            for (int line = 0; line < divider.lines.size(); line++) {
+                graphics.text(font, divider.lines.get(line), x + 8, divider.y + 4 + line * font.lineHeight, 0xFFBBD6FF);
+            }
             graphics.fill(x + 6, divider.y + divider.height - 3,
                     x + panelWidth - 38, divider.y + divider.height - 2, 0x7087B1F9);
         }
@@ -1010,7 +1015,7 @@ class VanillaLitematicaSettingsScreen extends Screen {
             }
         }
         for (Card card : cards) {
-            if (card.motion == null) continue;
+            if (card.motion == null || !isCardVisible(card)) continue;
             graphics.nextStratum();
             drawCard(graphics, card, card.x, card.y, card.scale * card.displayScale, false, false);
             drawCardControls(graphics, card, -10000, -10000, partialTick);
@@ -1055,10 +1060,15 @@ class VanillaLitematicaSettingsScreen extends Screen {
     }
 
     private void drawCardControls(GuiGraphicsExtractor graphics, Card card, int mouseX, int mouseY, float partialTick) {
+        if (!isCardVisible(card)) return;
         if (card.resetControl != null) card.resetControl.editor.active = LitematicaConfigDiscovery.isModified(card.option.object());
         for (ScaledEditor control : card.controls) control.extractRenderState(graphics, mouseX, mouseY, partialTick);
         if (card.aliasButton != null) card.aliasButton.extractRenderState(graphics, mouseX, mouseY, partialTick);
         if (card.infoButton != null) card.infoButton.extractRenderState(graphics, mouseX, mouseY, partialTick);
+    }
+
+    private boolean isCardVisible(Card card) {
+        return card.y < contentBottom && card.y + card.height * card.displayScale > cardsViewportTop();
     }
 
     private void drawSection(GuiGraphicsExtractor graphics, StringWidget heading, EditBox search, int y,
@@ -1092,8 +1102,9 @@ class VanillaLitematicaSettingsScreen extends Screen {
         IntegrationSettingsStyle.roundedRect(graphics, 8, 3, card.logicalWidth - 16, 6, 6, 0xFFFFFFFF);
         if (card.favorite) graphics.text(font, "*", card.logicalWidth - 14,
                 card.aliasY + 4, 0xFFFFD782, false);
-        graphics.textWithWordWrap(font, Component.literal(card.option.name()), 12, 14,
-                card.titleWidth, 0xFFFFFFFF);
+        for (int line = 0; line < card.titleLines.size(); line++) {
+            graphics.text(font, card.titleLines.get(line), 12, 14 + line * font.lineHeight, 0xFFFFFFFF);
+        }
         graphics.pose().popMatrix();
     }
 
@@ -1560,13 +1571,13 @@ class VanillaLitematicaSettingsScreen extends Screen {
 
     private static final class GroupDivider {
         private final String grouping;
-        private final Component label;
+        private final List<FormattedCharSequence> lines;
         private int y;
         private int bottom;
         private final int height;
-        private GroupDivider(String grouping, Component label, int y, int height) {
+        private GroupDivider(String grouping, List<FormattedCharSequence> lines, int y, int height) {
             this.grouping = grouping;
-            this.label = label;
+            this.lines = List.copyOf(lines);
             this.y = y;
             this.height = height;
         }
@@ -1708,6 +1719,7 @@ class VanillaLitematicaSettingsScreen extends Screen {
         private final int height;
         private final boolean favorite;
         private final int titleWidth;
+        private final List<FormattedCharSequence> titleLines;
         private final int aliasX;
         private final int aliasY;
         private final int infoX;
@@ -1728,7 +1740,8 @@ class VanillaLitematicaSettingsScreen extends Screen {
         private Component infoComment;
 
         private Card(Option option, int x, int y, int width, int height, boolean favorite,
-                     int titleWidth, int aliasX, int aliasY, int infoX, int infoY, int headerToolsX,
+                     int titleWidth, List<FormattedCharSequence> titleLines,
+                     int aliasX, int aliasY, int infoX, int infoY, int headerToolsX,
                      int logicalWidth, int logicalHeight, int editorY, float scale) {
             this.option = option;
             this.x = x;
@@ -1737,6 +1750,7 @@ class VanillaLitematicaSettingsScreen extends Screen {
             this.height = height;
             this.favorite = favorite;
             this.titleWidth = titleWidth;
+            this.titleLines = titleLines;
             this.aliasX = aliasX;
             this.aliasY = aliasY;
             this.infoX = infoX;

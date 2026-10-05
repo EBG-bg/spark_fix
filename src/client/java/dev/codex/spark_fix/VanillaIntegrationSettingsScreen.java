@@ -10,6 +10,8 @@ import net.minecraft.client.input.MouseButtonEvent;
 import net.minecraft.network.chat.Component;
 import net.minecraft.client.renderer.RenderPipelines;
 import net.minecraft.resources.Identifier;
+import net.minecraft.world.item.ItemStack;
+import net.minecraft.world.item.Items;
 import org.lwjgl.glfw.GLFW;
 
 import java.util.ArrayList;
@@ -22,12 +24,14 @@ class VanillaIntegrationSettingsScreen extends Screen {
     private static final Identifier LITEMATICA_ICON = Identifier.fromNamespaceAndPath("litematica", "icon.png");
     private final Screen parent;
     private final IntegrationSettingsState state = new IntegrationSettingsState();
+    private final ItemStack structureFinderIcon = new ItemStack(Items.CRACKED_STONE_BRICKS);
     private final List<Card> cards = new ArrayList<>();
     private final List<TextLine> labels = new ArrayList<>();
     private final List<AbstractWidget> contentWidgets = new ArrayList<>();
     private boolean adofaigoExpanded;
     private boolean reiExpanded;
     private boolean litematicaExpanded;
+    private boolean structureFinderExpanded;
     private boolean rebuildRequested;
     private double scrollOffset;
     private int contentTop;
@@ -40,6 +44,7 @@ class VanillaIntegrationSettingsScreen extends Screen {
     private final IntegrationSettingsStyle.HoverFade adofaigoCardFade = new IntegrationSettingsStyle.HoverFade();
     private final IntegrationSettingsStyle.HoverFade reiCardFade = new IntegrationSettingsStyle.HoverFade();
     private final IntegrationSettingsStyle.HoverFade litematicaCardFade = new IntegrationSettingsStyle.HoverFade();
+    private final IntegrationSettingsStyle.HoverFade structureFinderCardFade = new IntegrationSettingsStyle.HoverFade();
 
     VanillaIntegrationSettingsScreen(Screen parent) {
         super(Component.translatable("config.spark_fix.integration_title"));
@@ -101,7 +106,16 @@ class VanillaIntegrationSettingsScreen extends Screen {
                     rebuildRequested = true;
                 });
         if (state.litematica() && litematicaExpanded) y = litematicaDetails(y);
-        if (!state.adofaigo() && !state.reiRecipeBridge() && !state.litematica()) {
+        y = module("Structure Finder", "config.spark_fix.structure_finder_summary", state.structureFinder(),
+                state.structureFinderPendingRestart(), structureFinderExpanded, y, () -> {
+                    structureFinderExpanded = !structureFinderExpanded;
+                    rebuildRequested = true;
+                }, () -> {
+                    state.structureFinder(!state.structureFinder());
+                    rebuildRequested = true;
+                });
+        if (state.structureFinder() && structureFinderExpanded) y = structureFinderDetails(y);
+        if (!state.adofaigo() && !state.reiRecipeBridge() && !state.litematica() && !state.structureFinder()) {
             y += text(Component.translatable("config.spark_fix.disabled_until_enabled"),
                     left + 24, y, panelWidth - 48, IntegrationSettingsStyle.MUTED) + 8;
         }
@@ -141,6 +155,7 @@ class VanillaIntegrationSettingsScreen extends Screen {
             Button disclosure = new DisclosureButton(toggleX + 120, toggleY,
                     Component.translatable(name.equals("adofaigo") ? "config.spark_fix.adofaigo_section"
                             : name.equals("Litematica") ? "config.spark_fix.litematica_section"
+                            : name.equals("Structure Finder") ? "config.spark_fix.structure_finder_section"
                             : "config.spark_fix.rei_bridge_section"),
                     expanded, fold);
             contentWidgets.add(disclosure);
@@ -152,10 +167,13 @@ class VanillaIntegrationSettingsScreen extends Screen {
                     y + h - 2, panelWidth - 48, 0xFFFFD782) + 6;
         }
         cards.add(new Card(y, h, IntegrationSettingsStyle.MODULE_CARD, selected ? fold : null, enable,
-                name.equals("adofaigo") ? adofaigoCardFade : name.equals("Litematica") ? litematicaCardFade : reiCardFade,
+                name.equals("adofaigo") ? adofaigoCardFade : name.equals("Litematica") ? litematicaCardFade
+                        : name.equals("Structure Finder") ? structureFinderCardFade : reiCardFade,
                 name.equals("adofaigo") ? ADOFAIGO_ICON : name.equals("Litematica")
-                        ? state.litematicaInstalled() ? LITEMATICA_ICON : null : REI_BRIDGE_ICON,
-                name.equals("adofaigo") || name.equals("Litematica") ? 32 : 128));
+                        ? state.litematicaInstalled() ? LITEMATICA_ICON : null
+                        : name.equals("Structure Finder") ? null : REI_BRIDGE_ICON,
+                name.equals("adofaigo") || name.equals("Litematica") ? 32 : 128,
+                name.equals("Structure Finder")));
         return y + h + 9;
     }
 
@@ -168,7 +186,7 @@ class VanillaIntegrationSettingsScreen extends Screen {
         } else {
             h += addReiSettings(y + h);
         }
-        cards.add(new Card(y, h, IntegrationSettingsStyle.SETTINGS_PANEL, null, null, null, null, 0));
+        cards.add(new Card(y, h, IntegrationSettingsStyle.SETTINGS_PANEL, null, null, null, null, 0, false));
         return y + h + 9;
     }
 
@@ -185,7 +203,22 @@ class VanillaIntegrationSettingsScreen extends Screen {
                     () -> minecraft.setScreenAndShow(IntegrationSettingsRouter.createLitematica(this)));
             h += open.getHeight() + 10;
         }
-        cards.add(new Card(y, h, IntegrationSettingsStyle.SETTINGS_PANEL, null, null, null, null, 0));
+        cards.add(new Card(y, h, IntegrationSettingsStyle.SETTINGS_PANEL, null, null, null, null, 0, false));
+        return y + h + 9;
+    }
+
+    private int structureFinderDetails(int y) {
+        int h = 10;
+        if (!SparkFixConfig.structureFinderEnabledAtStartup()) {
+            h += text(Component.translatable("config.spark_fix.restart_required"), left + 24, y + h,
+                    panelWidth - 48, 0xFFFFFF55) + 10;
+        } else {
+            Button open = button(Component.translatable("gui.spark_fix.structure_finder.open"),
+                    left + 24, y + h, panelWidth - 48,
+                    () -> minecraft.setScreenAndShow(new StructureFinderScreen(this)));
+            h += open.getHeight() + 10;
+        }
+        cards.add(new Card(y, h, IntegrationSettingsStyle.SETTINGS_PANEL, null, null, null, null, 0, false));
         return y + h + 9;
     }
 
@@ -327,6 +360,13 @@ class VanillaIntegrationSettingsScreen extends Screen {
                 graphics.blit(RenderPipelines.GUI_TEXTURED, card.icon(), left + 24, card.y() + 10,
                         0.0F, 0.0F, 32, 32, card.iconSize(), card.iconSize());
             }
+            if (card.structureFinder()) {
+                graphics.pose().pushMatrix();
+                graphics.pose().translate(left + 24, card.y() + 10);
+                graphics.pose().scale(2, 2);
+                graphics.item(structureFinderIcon, 0, 0);
+                graphics.pose().popMatrix();
+            }
         }
         graphics.disableScissor();
     }
@@ -376,6 +416,6 @@ class VanillaIntegrationSettingsScreen extends Screen {
     }
 
     private record Card(int y, int height, int color, Runnable fold, Button enable,
-                        IntegrationSettingsStyle.HoverFade fade, Identifier icon, int iconSize) {}
+                        IntegrationSettingsStyle.HoverFade fade, Identifier icon, int iconSize, boolean structureFinder) {}
     private record TextLine(Component message, int x, int y, int width, int color) {}
 }

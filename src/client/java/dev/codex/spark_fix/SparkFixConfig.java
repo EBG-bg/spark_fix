@@ -44,6 +44,9 @@ public final class SparkFixConfig {
     private static final String ADOFAIGO_LAUNCH_DELAY_KEY = "adofaigo.launch_delay_seconds";
     private static final String REI_RECIPE_BRIDGE_ENABLED_KEY = "rei_recipe_bridge.enabled";
     private static final String LITEMATICA_ENABLED_KEY = "litematica.enabled";
+    private static final String STRUCTURE_FINDER_ENABLED_KEY = "structure_finder.enabled";
+    private static final String STRUCTURE_FINDER_TYPES_KEY = "structure_finder.selected_types";
+    private static final String STRUCTURE_FINDER_SIMILARITY_KEY = "structure_finder.similarity";
     private static final String LITEMATICA_FAVORITES_KEY = "litematica.settings.favorites";
     private static final String LITEMATICA_ORDER_KEY = "litematica.settings.order";
     private static final String LITEMATICA_ALIASES_KEY = "litematica.settings.aliases";
@@ -66,6 +69,10 @@ public final class SparkFixConfig {
     private static int adofaigoLaunchDelaySeconds;
     private static boolean reiRecipeBridgeEnabled;
     private static boolean litematicaEnabled;
+    private static boolean structureFinderEnabled;
+    private static boolean structureFinderEnabledAtStartup;
+    private static Set<String> selectedStructureTypes = Set.of();
+    private static int structureFinderSimilarity = 85;
     private static boolean adofaigoEnabledAtStartup;
     private static boolean reiRecipeBridgeEnabledAtStartup;
     private static boolean litematicaEnabledAtStartup;
@@ -132,6 +139,15 @@ public final class SparkFixConfig {
             litematicaEnabled = Boolean.parseBoolean(
                 properties.getProperty(LITEMATICA_ENABLED_KEY, Boolean.FALSE.toString())
             );
+            structureFinderEnabled = Boolean.parseBoolean(properties.getProperty(STRUCTURE_FINDER_ENABLED_KEY, "false"));
+            List<String> structureTypes = readStringList(properties, STRUCTURE_FINDER_TYPES_KEY);
+            selectedStructureTypes = structureTypes == null ? Set.of() : new LinkedHashSet<>(structureTypes);
+            try {
+                structureFinderSimilarity = Math.clamp(Integer.parseInt(properties.getProperty(
+                        STRUCTURE_FINDER_SIMILARITY_KEY, "85").trim()), 50, 100);
+            } catch (NumberFormatException ignored) {
+                structureFinderSimilarity = 85;
+            }
             litematicaFavorites = readStringList(properties, LITEMATICA_FAVORITES_KEY);
             litematicaSettingsOrder = readStringList(properties, LITEMATICA_ORDER_KEY);
             litematicaAliases = readStringListMap(properties, LITEMATICA_ALIASES_KEY);
@@ -178,6 +194,9 @@ public final class SparkFixConfig {
         properties.setProperty(ADOFAIGO_LAUNCH_DELAY_KEY, Integer.toString(adofaigoLaunchDelaySeconds));
         properties.setProperty(REI_RECIPE_BRIDGE_ENABLED_KEY, Boolean.toString(reiRecipeBridgeEnabled));
         properties.setProperty(LITEMATICA_ENABLED_KEY, Boolean.toString(litematicaEnabled));
+        properties.setProperty(STRUCTURE_FINDER_ENABLED_KEY, Boolean.toString(structureFinderEnabled));
+        properties.setProperty(STRUCTURE_FINDER_SIMILARITY_KEY, Integer.toString(structureFinderSimilarity));
+        writeStringList(properties, STRUCTURE_FINDER_TYPES_KEY, new ArrayList<>(selectedStructureTypes));
         if (litematicaFavorites != null) writeStringList(properties, LITEMATICA_FAVORITES_KEY, litematicaFavorites);
         if (litematicaSettingsOrder != null) writeStringList(properties, LITEMATICA_ORDER_KEY, litematicaSettingsOrder);
         if (litematicaAliases != null) writeStringListMap(properties, LITEMATICA_ALIASES_KEY, litematicaAliases);
@@ -290,6 +309,41 @@ public final class SparkFixConfig {
     public static synchronized boolean litematicaEnabledAtStartup() {
         load();
         return litematicaEnabledAtStartup;
+    }
+
+    public static synchronized boolean structureFinderEnabled() {
+        load();
+        return structureFinderEnabled;
+    }
+
+    public static synchronized void setStructureFinderEnabled(boolean value) {
+        load();
+        structureFinderEnabled = value;
+    }
+
+    public static synchronized boolean structureFinderEnabledAtStartup() {
+        load();
+        return structureFinderEnabledAtStartup;
+    }
+
+    public static synchronized Set<String> selectedStructureTypes() {
+        load();
+        return Set.copyOf(selectedStructureTypes);
+    }
+
+    public static synchronized void setSelectedStructureTypes(Set<String> types) {
+        load();
+        selectedStructureTypes = new LinkedHashSet<>(distinctKeys(types == null ? List.of() : new ArrayList<>(types)));
+    }
+
+    public static synchronized int structureFinderSimilarity() {
+        load();
+        return structureFinderSimilarity;
+    }
+
+    public static synchronized void setStructureFinderSimilarity(int value) {
+        load();
+        structureFinderSimilarity = Math.clamp(value, 50, 100);
     }
 
     public static synchronized List<String> litematicaAliasPresetsApplied() {
@@ -530,6 +584,7 @@ public final class SparkFixConfig {
         adofaigoEnabledAtStartup = adofaigoEnabled;
         reiRecipeBridgeEnabledAtStartup = reiRecipeBridgeEnabled;
         litematicaEnabledAtStartup = litematicaEnabled;
+        structureFinderEnabledAtStartup = structureFinderEnabled;
     }
 
     public static synchronized double scrollSensitivity() {

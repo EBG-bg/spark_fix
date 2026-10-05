@@ -1,10 +1,12 @@
 package dev.codex.spark_fix;
 
 import cn.reibridge.config.BridgeConfig;
+import cn.reibridge.recipe.RecipeCaptureStore;
 import com.adofaigo.client.AdofoigoLaunchHud;
 import com.adofaigo.client.SteamLauncher;
 import net.fabricmc.api.ClientModInitializer;
 import net.fabricmc.fabric.api.client.event.lifecycle.v1.ClientLifecycleEvents;
+import net.fabricmc.fabric.api.client.event.lifecycle.v1.ClientTickEvents;
 import net.fabricmc.fabric.api.client.networking.v1.ClientPlayConnectionEvents;
 import net.fabricmc.loader.api.FabricLoader;
 import org.slf4j.Logger;
@@ -22,9 +24,16 @@ public final class SparkFixClient implements ClientModInitializer {
     @Override
     public void onInitializeClient() {
         SparkFixConfig.load();
+        StructureFinderXaeroBridge.register();
         if (SparkFixConfig.adofaigoEnabledAtStartup()) AdofoigoLaunchHud.register();
+        if (SparkFixConfig.structureFinderEnabledAtStartup()) StructureFinder.register();
         if (FabricLoader.getInstance().isModLoaded("roughlyenoughitems")) {
             BridgeConfig.load();
+            if (SparkFixConfig.reiRecipeBridgeEnabledAtStartup()) {
+                ClientTickEvents.END_CLIENT_TICK.register(client -> RecipeCaptureStore.tick());
+                ClientPlayConnectionEvents.DISCONNECT.register((connection, client) -> RecipeCaptureStore.disconnect(connection));
+                ClientLifecycleEvents.CLIENT_STOPPING.register(client -> RecipeCaptureStore.shutdown());
+            }
         }
         LOGGER.info(
             "Loaded. ADOFAI={}, REI recipe bridge={}, REI transfer fallback and client compatibility fixes are ready.",

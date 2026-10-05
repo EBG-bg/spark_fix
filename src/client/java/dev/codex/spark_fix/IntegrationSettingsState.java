@@ -11,6 +11,7 @@ final class IntegrationSettingsState {
     private boolean adofaigo;
     private boolean reiRecipeBridge;
     private boolean litematica;
+    private boolean structureFinder;
     private ReiInlineSettings reiSettings;
     private boolean reiSettingsLoaded;
 
@@ -18,6 +19,7 @@ final class IntegrationSettingsState {
         this.adofaigo = SparkFixConfig.adofaigoEnabled();
         this.reiRecipeBridge = SparkFixConfig.reiRecipeBridgeEnabled();
         this.litematica = SparkFixConfig.litematicaEnabled();
+        this.structureFinder = SparkFixConfig.structureFinderEnabled();
     }
 
     boolean adofaigo() {
@@ -64,8 +66,17 @@ final class IntegrationSettingsState {
         return this.litematica != SparkFixConfig.litematicaEnabledAtStartup();
     }
 
+    boolean structureFinder() { return structureFinder; }
+
+    void structureFinder(boolean value) { structureFinder = value; }
+
+    boolean structureFinderPendingRestart() {
+        return structureFinder != SparkFixConfig.structureFinderEnabledAtStartup();
+    }
+
     boolean pendingRestart() {
-        return adofaigoPendingRestart() || reiRecipeBridgePendingRestart() || litematicaPendingRestart();
+        return adofaigoPendingRestart() || reiRecipeBridgePendingRestart() || litematicaPendingRestart()
+                || structureFinderPendingRestart();
     }
 
     boolean reiInstalled() {
@@ -88,6 +99,7 @@ final class IntegrationSettingsState {
         SparkFixConfig.setAdofoigoEnabled(this.adofaigo);
         SparkFixConfig.setReiRecipeBridgeEnabled(this.reiRecipeBridge);
         SparkFixConfig.setLitematicaEnabled(this.litematica);
+        SparkFixConfig.setStructureFinderEnabled(this.structureFinder);
         SparkFixConfig.save();
     }
 }

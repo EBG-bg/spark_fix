@@ -2,7 +2,7 @@
 
 面向 **Minecraft 26.2 Fabric 客户端**的修复模组，源自 `warmaislandfix`，最初用于 [沃玛岛服务器](https://www.warma.fans/mc)。未触发问题时尽量保持原版和原模组行为。
 
-当前发布版本为 **2.1.5**。
+当前发布版本为 **2.1.6**。
 
 ## 已包含功能
 
@@ -23,10 +23,11 @@
 12. 已整合 `adofaigo` 模组
 13. 已整合 `REI Recipe Bridge` 模组
 14. 可选 `better litematica setting`（投影设置）
+15. 可选 `Structure Finder`，查找已加载地形中的原版结构
 
 ## 安装
 
-[下载 spark_fix-2.1.5.jar](https://github.com/EBG-bg/spark_fix/releases/download/v2.1.5/spark_fix-2.1.5.jar) · [发布页](https://github.com/EBG-bg/spark_fix/releases/tag/v2.1.5)
+[下载 spark_fix-2.1.6.jar](https://github.com/EBG-bg/spark_fix/releases/download/v2.1.6/spark_fix-2.1.6.jar) · [发布页](https://github.com/EBG-bg/spark_fix/releases/tag/v2.1.6)
 
 1. 使用 Java 25，安装 Minecraft 26.2、Fabric Loader 0.19.3 或更高版本，以及对应版本的 Fabric API。
 2. 将 JAR 放入客户端 `mods` 目录；停用旧的 `warmaislandfix`、独立版 `adofaigo` 和 `REI Recipe Bridge`。
@@ -49,9 +50,11 @@
 
 ## 配置
 
-安装 Mod Menu 后打开 `spark_fix 设置`，右上角进入 `整合模组设置`。三个整合功能默认关闭，启用或停用须重启 Minecraft；点击模组卡片可展开子设置。
+安装 Mod Menu 后打开 `spark_fix 设置`，右上角进入 `整合模组设置`。整合功能默认关闭，启用或停用须重启 Minecraft；点击模组卡片可展开子设置。
 
 adofai 启动按钮支持右键设置 0～60 秒启动延迟；启动后在物品栏上方显示倒计时和窗口检测状态。退出世界时取消尚未完成的启动任务。
+
+REI Recipe Bridge 默认保留模组服的第三方配方。配方缓存合并更新后保存；关闭或切换合成界面会取消尚未完成的一键摆放。
 
 ### 投影设置
 
@@ -67,6 +70,16 @@ adofai 启动按钮支持右键设置 0～60 秒启动延迟；启动后在物�
 关闭投影设置页时统一保存选项、布局和别名。
 
 打印机设置按模组来源自动区分分支，切换时恢复各分支最后保存的设置；同一分支升级继续使用当前配置。
+
+### Structure Finder
+
+启用并重启后，暂停菜单工具栏显示裂纹石砖按钮。搜索结构中文名、英文名或 ID，勾选后持续寻找，并用线框高亮匹配片段、发送本地聊天提示。支持原版模板的旋转、镜像和多个变体，搜索相似度可调 **50%～100%**，默认 **85%**。
+
+只读取客户端已加载区块，不需要种子、不请求新区块。周围多余方块不影响匹配；相似度按有效方块特征计算。识别结果属于地形推断，玩家仿建也可能匹配；服务器未发送或混淆的结构方块无法还原。埋藏宝藏仅凭箱子不能可靠识别，因此暂不支持。
+
+高亮从首次发现起保留一小时，最多同时显示 **256** 组结构；隐藏的组不占名额，满后淘汰最早发现的组。重扫不会刷新保留时间，也不会立即恢复已经取消、到期或淘汰的高亮。
+
+聊天坐标后的“取消高亮”可隐藏对应结构，调整相似度仍保留取消记录；安装 Xaero 后可点击蓝色坐标创建路径点，或用“删除路径点”删除该点。切换路径点集合后仍可删除原集合中的点。Xaero 路径点页面顶部可批量删除 Structure Finder 写入的遗迹点。
 
 ### 配置文件与别名包
 
@@ -86,7 +99,7 @@ adofai 启动按钮支持右键设置 0～60 秒启动延迟；启动后在物�
 git diff --check
 ```
 
-成品位于 `build/libs/spark_fix-2.1.5.jar`。
+成品位于 `build/libs/spark_fix-2.1.6.jar`。
 
 ## 许可证
 

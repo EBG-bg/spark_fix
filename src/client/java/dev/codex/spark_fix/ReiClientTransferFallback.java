@@ -9,6 +9,7 @@ import me.shedaniel.rei.api.common.transfer.info.stack.VanillaSlotAccessor;
 import net.fabricmc.fabric.api.client.event.lifecycle.v1.ClientTickEvents;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.multiplayer.MultiPlayerGameMode;
+import net.minecraft.client.gui.screens.Screen;
 import net.minecraft.network.chat.Component;
 import net.minecraft.world.entity.player.Player;
 import net.minecraft.world.inventory.AbstractContainerMenu;
@@ -79,8 +80,10 @@ public final class ReiClientTransferFallback {
             return failed("error.spark_fix.rei_transfer.overlap");
         }
 
-        TransferSession session = new TransferSession(minecraft, gameMode, player, menu);
-        minecraft.setScreenAndShow(context.getContainerScreen());
+        Screen containerScreen = context.getContainerScreen();
+        if (containerScreen == null) return failed("error.spark_fix.rei_transfer.unavailable");
+        TransferSession session = new TransferSession(minecraft, gameMode, player, menu, containerScreen);
+        minecraft.setScreenAndShow(containerScreen);
         activeTransfer = new TransferOperation(
                 session,
                 inputIndices,
@@ -108,6 +111,11 @@ public final class ReiClientTransferFallback {
     private static void tick(Minecraft minecraft) {
         TransferOperation operation = activeTransfer;
         if (operation == null || operation.session.minecraft != minecraft) {
+            return;
+        }
+        if (!operation.session.isCurrent()) {
+            activeTransfer = null;
+            transferCooldownUntil = System.nanoTime() + TRANSFER_COOLDOWN_NANOS;
             return;
         }
         Progress progress;
@@ -602,6 +610,7 @@ public final class ReiClientTransferFallback {
         private final MultiPlayerGameMode gameMode;
         private final Player player;
         private final AbstractContainerMenu menu;
+        private final Screen screen;
         private final int containerId;
         private final int maxClicks;
         private int clicks;
@@ -611,12 +620,14 @@ public final class ReiClientTransferFallback {
                 Minecraft minecraft,
                 MultiPlayerGameMode gameMode,
                 Player player,
-                AbstractContainerMenu menu
+                AbstractContainerMenu menu,
+                Screen screen
         ) {
             this.minecraft = minecraft;
             this.gameMode = gameMode;
             this.player = player;
             this.menu = menu;
+            this.screen = screen;
             this.containerId = menu.containerId;
             this.maxClicks = SparkFixConfig.maxReiClicks();
         }
@@ -624,6 +635,7 @@ public final class ReiClientTransferFallback {
         private boolean isCurrent() {
             return this.minecraft.player == this.player
                     && this.minecraft.gameMode == this.gameMode
+                    && this.minecraft.gui.screen() == this.screen
                     && this.player.containerMenu == this.menu
                     && this.menu.containerId == this.containerId;
         }
