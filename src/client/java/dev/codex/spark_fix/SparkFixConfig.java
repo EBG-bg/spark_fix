@@ -47,6 +47,7 @@ public final class SparkFixConfig {
     private static final String STRUCTURE_FINDER_ENABLED_KEY = "structure_finder.enabled";
     private static final String STRUCTURE_FINDER_TYPES_KEY = "structure_finder.selected_types";
     private static final String STRUCTURE_FINDER_SIMILARITY_KEY = "structure_finder.similarity";
+    private static final String STRUCTURE_FINDER_SCAN_THREADS_KEY = "structure_finder.scan_threads";
     private static final String LITEMATICA_FAVORITES_KEY = "litematica.settings.favorites";
     private static final String LITEMATICA_ORDER_KEY = "litematica.settings.order";
     private static final String LITEMATICA_ALIASES_KEY = "litematica.settings.aliases";
@@ -73,6 +74,7 @@ public final class SparkFixConfig {
     private static boolean structureFinderEnabledAtStartup;
     private static Set<String> selectedStructureTypes = Set.of();
     private static int structureFinderSimilarity = 85;
+    private static int structureFinderScanThreads = Math.min(2, structureFinderMaxScanThreads());
     private static boolean adofaigoEnabledAtStartup;
     private static boolean reiRecipeBridgeEnabledAtStartup;
     private static boolean litematicaEnabledAtStartup;
@@ -148,6 +150,13 @@ public final class SparkFixConfig {
             } catch (NumberFormatException ignored) {
                 structureFinderSimilarity = 85;
             }
+            try {
+                structureFinderScanThreads = Math.clamp(Integer.parseInt(properties.getProperty(
+                        STRUCTURE_FINDER_SCAN_THREADS_KEY, Integer.toString(defaultStructureFinderScanThreads())).trim()),
+                        1, structureFinderMaxScanThreads());
+            } catch (NumberFormatException ignored) {
+                structureFinderScanThreads = defaultStructureFinderScanThreads();
+            }
             litematicaFavorites = readStringList(properties, LITEMATICA_FAVORITES_KEY);
             litematicaSettingsOrder = readStringList(properties, LITEMATICA_ORDER_KEY);
             litematicaAliases = readStringListMap(properties, LITEMATICA_ALIASES_KEY);
@@ -196,6 +205,7 @@ public final class SparkFixConfig {
         properties.setProperty(LITEMATICA_ENABLED_KEY, Boolean.toString(litematicaEnabled));
         properties.setProperty(STRUCTURE_FINDER_ENABLED_KEY, Boolean.toString(structureFinderEnabled));
         properties.setProperty(STRUCTURE_FINDER_SIMILARITY_KEY, Integer.toString(structureFinderSimilarity));
+        properties.setProperty(STRUCTURE_FINDER_SCAN_THREADS_KEY, Integer.toString(structureFinderScanThreads()));
         writeStringList(properties, STRUCTURE_FINDER_TYPES_KEY, new ArrayList<>(selectedStructureTypes));
         if (litematicaFavorites != null) writeStringList(properties, LITEMATICA_FAVORITES_KEY, litematicaFavorites);
         if (litematicaSettingsOrder != null) writeStringList(properties, LITEMATICA_ORDER_KEY, litematicaSettingsOrder);
@@ -344,6 +354,26 @@ public final class SparkFixConfig {
     public static synchronized void setStructureFinderSimilarity(int value) {
         load();
         structureFinderSimilarity = Math.clamp(value, 50, 100);
+    }
+
+    /** Maximum worker count while reserving roughly half of the logical CPUs for the game. */
+    public static int structureFinderMaxScanThreads() {
+        return Math.max(1, Math.min(8, Runtime.getRuntime().availableProcessors() / 2));
+    }
+
+    private static int defaultStructureFinderScanThreads() {
+        return Math.min(2, structureFinderMaxScanThreads());
+    }
+
+    public static synchronized int structureFinderScanThreads() {
+        load();
+        structureFinderScanThreads = Math.clamp(structureFinderScanThreads, 1, structureFinderMaxScanThreads());
+        return structureFinderScanThreads;
+    }
+
+    public static synchronized void setStructureFinderScanThreads(int value) {
+        load();
+        structureFinderScanThreads = Math.clamp(value, 1, structureFinderMaxScanThreads());
     }
 
     public static synchronized List<String> litematicaAliasPresetsApplied() {

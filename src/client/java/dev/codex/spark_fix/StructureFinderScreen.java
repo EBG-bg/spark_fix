@@ -44,15 +44,52 @@ public final class StructureFinderScreen extends Screen {
         panelWidth = Math.min(640, Math.max(1, width - 24));
         panelLeft = (width - panelWidth) / 2;
         int actionGap = 5;
-        int selectAllWidth = Math.max(58,
-                font.width(Component.translatable("gui.spark_fix.structure_finder.select_all")) + 16);
-        int clearAllWidth = Math.max(58,
-                font.width(Component.translatable("gui.spark_fix.structure_finder.deselect_all")) + 16);
-        int actionRight = panelLeft + 16 + selectAllWidth + actionGap + clearAllWidth;
-        boolean separateActionRow = actionRight + 8 > (width - font.width(title)) / 2;
-        int controlsOffset = separateActionRow ? 24 : 0;
-        int searchWidth = Math.max(60, panelWidth - 32);
-        search = addRenderableWidget(new EditBox(font, panelLeft + 16, 57 + controlsOffset, searchWidth, 20,
+        int contentLeft = panelLeft + 16;
+        int contentRight = panelLeft + panelWidth - 16;
+        int contentWidth = Math.max(1, contentRight - contentLeft);
+        String[] actionKeys = {"select_all", "deselect_all", "dismiss_all_highlights"};
+        int[] actionWidths = new int[actionKeys.length];
+        int actionsWidth = actionGap * (actionKeys.length - 1);
+        for (int i = 0; i < actionKeys.length; i++) {
+            actionWidths[i] = Math.min(contentWidth, Math.max(58,
+                    font.width(Component.translatable("gui.spark_fix.structure_finder." + actionKeys[i])) + 16));
+            actionsWidth += actionWidths[i];
+        }
+        int titleWidth = font.width(title);
+        boolean separateActionRow = contentLeft + actionsWidth + 8 > (width - titleWidth) / 2;
+        int actionX = contentLeft;
+        int actionY = separateActionRow ? 57 : 20;
+        for (int i = 0; i < actionKeys.length; i++) {
+            if (actionX > contentLeft && actionX + actionWidths[i] > contentRight) {
+                actionX = contentLeft;
+                actionY += 24;
+            }
+            final int action = i;
+            Button button = Button.builder(Component.translatable("gui.spark_fix.structure_finder." + actionKeys[i]),
+                            ignored -> {
+                                switch (action) {
+                                    case 0 -> selectAllTypes();
+                                    case 1 -> clearAllTypes();
+                                    case 2 -> StructureFinder.dismissAllHighlights();
+                                }
+                            })
+                    .bounds(actionX, actionY, actionWidths[i], 20).build();
+            if (i == 2) button.setTooltip(Tooltip.create(Component.translatable(
+                    "gui.spark_fix.structure_finder.dismiss_all_highlights_hint")));
+            addRenderableWidget(button);
+            actionX += actionWidths[i] + actionGap;
+        }
+        int workerWidth = Math.min(contentWidth, Math.max(112,
+                font.width(Component.translatable("gui.spark_fix.structure_finder.scan_threads",
+                        SparkFixConfig.structureFinderMaxScanThreads())) + 24));
+        int workerX = contentRight - workerWidth;
+        int workerY = 20;
+        if (workerX < (width + titleWidth) / 2 + 8) {
+            workerY = separateActionRow && actionX + 3 <= workerX ? actionY : Math.max(57, actionY + 24);
+        }
+        addRenderableWidget(new ScanWorkersSlider(workerX, workerY, workerWidth));
+        int searchY = Math.max(57, Math.max(actionY + 20, workerY + 22) + 4);
+        search = addRenderableWidget(new EditBox(font, contentLeft, searchY, contentWidth, 20,
                 Component.translatable("gui.spark_fix.structure_finder.search")));
         search.setMaxLength(128);
         search.setHint(Component.translatable("gui.spark_fix.structure_finder.search"));
@@ -62,15 +99,8 @@ public final class StructureFinderScreen extends Screen {
             targetScroll = scroll = 0;
             rebuildRows();
         });
-        int actionY = separateActionRow ? 57 : 20;
-        addRenderableWidget(Button.builder(Component.translatable("gui.spark_fix.structure_finder.select_all"),
-                        ignored -> selectAllTypes())
-                .bounds(panelLeft + 16, actionY, selectAllWidth, 20).build());
-        addRenderableWidget(Button.builder(Component.translatable("gui.spark_fix.structure_finder.deselect_all"),
-                        ignored -> clearAllTypes())
-                .bounds(panelLeft + 16 + selectAllWidth + actionGap, actionY, clearAllWidth, 20).build());
-        addRenderableWidget(new SimilaritySlider(panelLeft + 16, 86 + controlsOffset, panelWidth - 32));
-        viewportTop = 119 + controlsOffset;
+        addRenderableWidget(new SimilaritySlider(contentLeft, searchY + 29, contentWidth));
+        viewportTop = searchY + 62;
         viewportBottom = Math.max(viewportTop + 1, height - 52);
         addRenderableWidget(Button.builder(Component.translatable("config.spark_fix.done"), ignored -> onClose())
                 .bounds(panelLeft + panelWidth - 106, height - 36, 90, 22).build());
@@ -255,9 +285,9 @@ public final class StructureFinderScreen extends Screen {
                     entry.name(), ignored -> {}, DEFAULT_NARRATION);
             this.entry = entry;
             this.index = index;
-            Component tooltip = entry.detectable()
-                    ? Component.literal(entry.enName() + " · " + entry.id())
-                    : Component.translatable("gui.spark_fix.structure_finder.unreliable");
+            Component tooltip = entry.id().equals("buried_treasure")
+                    ? Component.translatable("gui.spark_fix.structure_finder.treasure_hint")
+                    : Component.literal(entry.enName() + " · " + entry.id());
             setTooltip(Tooltip.create(tooltip));
             active = entry.detectable();
         }
@@ -334,6 +364,71 @@ public final class StructureFinderScreen extends Screen {
         private void saveValue() {
             SparkFixConfig.save();
             dirty = false;
+        }
+    }
+
+    private static final class ScanWorkersSlider extends AbstractSliderButton {
+        private boolean dirty;
+
+        private ScanWorkersSlider(int x, int y, int width) {
+            super(x, y, Math.max(1, width), 22, Component.empty(), initialValue());
+            setTooltip(Tooltip.create(Component.translatable("gui.spark_fix.structure_finder.scan_threads_hint")));
+            updateMessage();
+        }
+
+        private static double initialValue() {
+            int max = SparkFixConfig.structureFinderMaxScanThreads();
+            return max <= 1 ? 0 : (SparkFixConfig.structureFinderScanThreads() - 1) / (double) (max - 1);
+        }
+
+        private int workers() {
+            int max = SparkFixConfig.structureFinderMaxScanThreads();
+            return max <= 1 ? 1 : Math.clamp(1 + (int) Math.round(value * (max - 1)), 1, max);
+        }
+
+        @Override
+        protected void updateMessage() {
+            setMessage(Component.translatable("gui.spark_fix.structure_finder.scan_threads", workers()));
+        }
+
+        @Override
+        protected void applyValue() {
+            int workers = workers();
+            int max = SparkFixConfig.structureFinderMaxScanThreads();
+            value = max <= 1 ? 0 : (workers - 1) / (double) (max - 1);
+            if (SparkFixConfig.structureFinderScanThreads() == workers) return;
+            SparkFixConfig.setStructureFinderScanThreads(workers);
+            dirty = true;
+        }
+
+        @Override
+        public boolean mouseReleased(MouseButtonEvent event) {
+            boolean handled = super.mouseReleased(event);
+            if (event.button() == GLFW.GLFW_MOUSE_BUTTON_LEFT && dirty) {
+                SparkFixConfig.save();
+                dirty = false;
+            }
+            return handled;
+        }
+
+        @Override
+        public boolean keyPressed(KeyEvent event) {
+            if (active && isFocused() && (event.isLeft() || event.isRight())) {
+                int max = SparkFixConfig.structureFinderMaxScanThreads();
+                setValue(max <= 1 ? 0 : Math.clamp(Math.round(value * (max - 1)
+                        + (event.isRight() ? 1 : -1)), 0, max - 1) / (double) (max - 1));
+                if (dirty) {
+                    SparkFixConfig.save();
+                    dirty = false;
+                }
+                return true;
+            }
+            return super.keyPressed(event);
+        }
+
+        @Override
+        public boolean mouseScrolled(double x, double y, double horizontal, double vertical) {
+            return false;
         }
     }
 }

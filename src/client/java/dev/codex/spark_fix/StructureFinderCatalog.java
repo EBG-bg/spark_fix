@@ -57,6 +57,11 @@ public final class StructureFinderCatalog {
             "minecraft:cartography_table", "minecraft:brewing_stand",
             "minecraft:loom", "minecraft:smithing_table"
     );
+    private static final Set<String> NATURAL_TERRACOTTA = Set.of(
+            "minecraft:terracotta", "minecraft:white_terracotta", "minecraft:orange_terracotta",
+            "minecraft:yellow_terracotta", "minecraft:brown_terracotta", "minecraft:red_terracotta",
+            "minecraft:light_gray_terracotta"
+    );
 
     private static final List<Entry> ENTRIES = List.of(
             e("ancient_city", "远古城市", "Ancient City", "overworld"),
@@ -71,6 +76,7 @@ public final class StructureFinderCatalog {
             e("mineshaft", "废弃矿井", "Mineshaft", "overworld"),
             e("monument", "海底神殿", "Ocean Monument", "overworld"),
             e("mansion", "林地府邸", "Woodland Mansion", "overworld"),
+            e("monster_room", "刷怪房", "Monster Room", "overworld"),
             e("nether_fossil", "下界化石", "Nether Fossil", "nether"),
             e("pillager_outpost", "掠夺者前哨站", "Pillager Outpost", "overworld"),
             e("ruined_portal", "废弃传送门", "Ruined Portal", "any"),
@@ -120,12 +126,13 @@ public final class StructureFinderCatalog {
             String needle = normalize(query);
             return normalize(id).contains(needle)
                     || normalize(zhName).contains(needle)
-                    || normalize(enName).contains(needle);
+                    || normalize(enName).contains(needle)
+                    || id.equals("monster_room") && (normalize("地牢").contains(needle)
+                    || normalize("Dungeon").contains(needle));
         }
 
-        /** Buried treasure exposes only one generated chest and has no safe fingerprint. */
         public boolean detectable() {
-            return !id.equals("buried_treasure");
+            return true;
         }
     }
 
@@ -143,34 +150,101 @@ public final class StructureFinderCatalog {
     }
 
     /**
-     * Vanilla processors can replace some ruined-portal blocks after a template
-     * is placed. The scanner may compare any of these IDs for the same sample;
-     * this list is deliberately narrow and only covers Mojang's processors.
+     * Known vanilla processors replace these template blocks during generation.
+     * Only non-air outputs are accepted: removed or unavailable evidence must
+     * still count as missing, and replacements never apply across structure types.
      */
     public static List<String> acceptedBlockIds(String type, String expected) {
+        if ("buried_treasure".equals(type)) {
+            List<String> floor = List.of("minecraft:sandstone", "minecraft:stone", "minecraft:andesite",
+                    "minecraft:granite", "minecraft:diorite");
+            if ("minecraft:sandstone".equals(expected)) return floor;
+            if ("minecraft:sand".equals(expected)) {
+                List<String> surrounding = new ArrayList<>(floor);
+                surrounding.addAll(List.of("minecraft:sand", "minecraft:gravel", "minecraft:dirt",
+                        "minecraft:grass_block", "minecraft:clay", "minecraft:red_sand", "minecraft:red_sandstone"));
+                return List.copyOf(surrounding);
+            }
+        }
+        if ("monster_room".equals(type)
+                && ("minecraft:cobblestone".equals(expected) || "minecraft:mossy_cobblestone".equals(expected))) {
+            return List.of("minecraft:cobblestone", "minecraft:mossy_cobblestone");
+        }
+        if ("fossil".equals(type) && "minecraft:bone_block".equals(expected)) {
+            return List.of(expected, "minecraft:coal_ore", "minecraft:deepslate_diamond_ore");
+        }
+        if ("ancient_city".equals(type)) {
+            return switch (expected) {
+                case "minecraft:deepslate_bricks" -> List.of(expected, "minecraft:cracked_deepslate_bricks");
+                case "minecraft:deepslate_tiles" -> List.of(expected, "minecraft:cracked_deepslate_tiles");
+                default -> List.of(expected);
+            };
+        }
+        if ("trial_chambers".equals(type) && "minecraft:waxed_copper_bulb".equals(expected)) {
+            return List.of(expected, "minecraft:waxed_exposed_copper_bulb",
+                    "minecraft:waxed_weathered_copper_bulb", "minecraft:waxed_oxidized_copper_bulb");
+        }
+        if ("trail_ruins".equals(type) && "minecraft:mud_bricks".equals(expected)) {
+            return List.of(expected, "minecraft:packed_mud");
+        }
+        if ("bastion_remnant".equals(type)) {
+            return switch (expected) {
+                case "minecraft:polished_blackstone_bricks", "minecraft:chiseled_polished_blackstone",
+                        "minecraft:gold_block" -> List.of(expected, "minecraft:cracked_polished_blackstone_bricks");
+                case "minecraft:cracked_polished_blackstone_bricks" -> List.of(expected, "minecraft:polished_blackstone_bricks");
+                case "minecraft:gilded_blackstone" -> List.of(expected, "minecraft:blackstone");
+                case "minecraft:blackstone" -> List.of(expected, "minecraft:gilded_blackstone",
+                        "minecraft:cracked_polished_blackstone_bricks");
+                case "minecraft:magma_block" -> List.of(expected, "minecraft:cracked_polished_blackstone_bricks");
+                default -> List.of(expected);
+            };
+        }
         if (!"ruined_portal".equals(type) || expected == null) return List.of(expected);
         return switch (expected) {
             case "minecraft:obsidian" -> List.of("minecraft:obsidian", "minecraft:crying_obsidian");
             case "minecraft:stone_bricks" -> List.of("minecraft:stone_bricks", "minecraft:cracked_stone_bricks",
-                    "minecraft:mossy_stone_bricks", "minecraft:polished_blackstone_bricks");
-            case "minecraft:stone" -> List.of("minecraft:stone", "minecraft:polished_blackstone");
+                    "minecraft:mossy_stone_bricks", "minecraft:stone_brick_stairs", "minecraft:mossy_stone_brick_stairs",
+                    "minecraft:polished_blackstone_bricks", "minecraft:cracked_polished_blackstone_bricks",
+                    "minecraft:polished_blackstone_brick_stairs");
+            case "minecraft:stone" -> List.of("minecraft:stone", "minecraft:cracked_stone_bricks",
+                    "minecraft:mossy_stone_bricks", "minecraft:stone_brick_stairs", "minecraft:mossy_stone_brick_stairs",
+                    "minecraft:polished_blackstone", "minecraft:polished_blackstone_bricks",
+                    "minecraft:cracked_polished_blackstone_bricks", "minecraft:polished_blackstone_brick_stairs");
+            case "minecraft:mossy_stone_bricks" -> List.of(expected, "minecraft:polished_blackstone_bricks");
             case "minecraft:cobblestone", "minecraft:mossy_cobblestone" -> List.of(expected,
                     "minecraft:blackstone");
+            case "minecraft:cobblestone_stairs", "minecraft:mossy_cobblestone_stairs" -> List.of(expected,
+                    "minecraft:blackstone_stairs", "minecraft:stone_slab", "minecraft:stone_brick_slab",
+                    "minecraft:mossy_stone_brick_stairs", "minecraft:mossy_stone_brick_slab",
+                    "minecraft:polished_blackstone_slab", "minecraft:polished_blackstone_brick_stairs",
+                    "minecraft:polished_blackstone_brick_slab");
+            case "minecraft:stone_stairs" -> List.of(expected, "minecraft:polished_blackstone_stairs",
+                    "minecraft:stone_slab", "minecraft:stone_brick_slab", "minecraft:mossy_stone_brick_stairs",
+                    "minecraft:mossy_stone_brick_slab", "minecraft:polished_blackstone_slab",
+                    "minecraft:polished_blackstone_brick_stairs", "minecraft:polished_blackstone_brick_slab");
+            case "minecraft:cobblestone_slab", "minecraft:mossy_cobblestone_slab" -> List.of(expected,
+                    "minecraft:blackstone_slab", "minecraft:mossy_stone_brick_slab",
+                    "minecraft:polished_blackstone_brick_slab");
+            case "minecraft:cobblestone_wall", "minecraft:mossy_cobblestone_wall" -> List.of(expected,
+                    "minecraft:blackstone_wall", "minecraft:mossy_stone_brick_wall",
+                    "minecraft:polished_blackstone_brick_wall");
             case "minecraft:chiseled_stone_bricks" -> List.of("minecraft:chiseled_stone_bricks",
                     "minecraft:cracked_stone_bricks", "minecraft:mossy_stone_bricks",
                     "minecraft:stone_brick_stairs", "minecraft:mossy_stone_brick_stairs",
-                    "minecraft:chiseled_polished_blackstone");
-            case "minecraft:stone_brick_stairs" -> List.of("minecraft:stone_brick_stairs",
+                    "minecraft:chiseled_polished_blackstone", "minecraft:polished_blackstone_bricks",
+                    "minecraft:cracked_polished_blackstone_bricks", "minecraft:polished_blackstone_brick_stairs");
+            case "minecraft:stone_brick_stairs", "minecraft:mossy_stone_brick_stairs" -> List.of(expected,
                     "minecraft:stone_brick_slab", "minecraft:mossy_stone_brick_stairs",
                     "minecraft:mossy_stone_brick_slab", "minecraft:stone_slab",
                     "minecraft:polished_blackstone_brick_stairs", "minecraft:polished_blackstone_brick_slab");
-            case "minecraft:stone_brick_slab" -> List.of("minecraft:stone_brick_slab",
+            case "minecraft:stone_brick_slab", "minecraft:mossy_stone_brick_slab" -> List.of(expected,
                     "minecraft:mossy_stone_brick_slab", "minecraft:polished_blackstone_brick_slab");
             case "minecraft:smooth_stone_slab" -> List.of("minecraft:smooth_stone_slab",
-                    "minecraft:polished_blackstone_slab");
+                    "minecraft:mossy_stone_brick_slab", "minecraft:polished_blackstone_slab",
+                    "minecraft:polished_blackstone_brick_slab");
             case "minecraft:stone_slab" -> List.of("minecraft:stone_slab", "minecraft:mossy_stone_brick_slab",
                     "minecraft:polished_blackstone_slab", "minecraft:polished_blackstone_brick_slab");
-            case "minecraft:stone_brick_wall" -> List.of("minecraft:stone_brick_wall",
+            case "minecraft:stone_brick_wall", "minecraft:mossy_stone_brick_wall" -> List.of(expected,
                     "minecraft:mossy_stone_brick_wall", "minecraft:polished_blackstone_brick_wall");
             case "minecraft:iron_bars" -> List.of("minecraft:iron_bars", "minecraft:iron_chain");
             case "minecraft:cracked_stone_bricks" -> List.of("minecraft:cracked_stone_bricks",
@@ -189,6 +263,11 @@ public final class StructureFinderCatalog {
                 || VILLAGE_WORKSTATIONS.contains(value);
     }
 
+    /** A badlands terracotta layer alone cannot establish an archaeological ruin. */
+    public static boolean isTrailRuinsAnchor(String id) {
+        return isStrong(id) && !NATURAL_TERRACOTTA.contains(id.toLowerCase(Locale.ROOT));
+    }
+
     private static String normalize(String text) {
         return text.toLowerCase(Locale.ROOT).replace(" ", "").replace("_", "");
     }
@@ -200,6 +279,8 @@ public final class StructureFinderCatalog {
             if (entry.detectable()) {
                 Pattern process = processPattern(entry.id());
                 if (process != null) result.add(process);
+                if (entry.id().equals("monster_room")) result.addAll(monsterRoomPatterns());
+                if (entry.id().equals("fortress")) result.add(fortressCrossingPattern());
                 if (entry.id().equals("mineshaft")) {
                     Pattern normal = process;
                     List<Sample> mesa = normal.samples().stream()
@@ -233,7 +314,7 @@ public final class StructureFinderCatalog {
             case "fossil" -> "fossil";
             case "igloo" -> "igloo";
             case "jungle_pyramid", "desert_pyramid", "swamp_hut", "stronghold",
-                    "mineshaft", "monument" -> "";
+                    "mineshaft", "monument", "buried_treasure", "monster_room" -> "";
             case "nether_fossil" -> "nether_fossils";
             case "pillager_outpost" -> "pillager_outpost";
             case "ruined_portal" -> "ruined_portal";
@@ -325,6 +406,8 @@ public final class StructureFinderCatalog {
                 // only a generic wooden fragment and causes farm false positives.
                 if (type.equals("village")
                         && samples.stream().noneMatch(sample -> isVillageAnchor(sample.blockId()))) continue;
+                if (type.equals("trail_ruins")
+                        && samples.stream().noneMatch(sample -> isTrailRuinsAnchor(sample.blockId()))) continue;
                 // A decorative fence/roof/lamp stub is not a structure. Bone
                 // fossils legitimately contain one block type, but retain their
                 // complete dispersed shape rather than one arbitrary small patch.
@@ -464,20 +547,20 @@ public final class StructureFinderCatalog {
     private static Pattern processPattern(String type) {
         List<Sample> samples = new ArrayList<>();
         switch (type) {
-            case "desert_pyramid" -> {
-                samples.add(new Sample(10, 0, 10, "minecraft:blue_terracotta"));
-                int[][] orange = {{10, 7}, {10, 8}, {9, 9}, {11, 9}, {8, 10}, {12, 10},
-                        {7, 10}, {13, 10}, {9, 11}, {11, 11}, {10, 12}, {10, 13}};
-                for (int[] point : orange) {
-                    samples.add(new Sample(point[0], 0, point[1], "minecraft:orange_terracotta"));
-                }
-                // Opposite facade motifs span the whole pyramid, rather than
-                // letting an ordinary terracotta floor count as the structure.
-                for (int x : new int[]{0, 20}) {
-                    for (int y : new int[]{2, 3, 5, 7}) {
-                        samples.add(new Sample(x, y, 2, "minecraft:orange_terracotta"));
+            case "buried_treasure" -> {
+                samples.add(new Sample(2, 2, 2, "minecraft:chest"));
+                samples.add(new Sample(2, 1, 2, "minecraft:sandstone"));
+                for (int y = 0; y < 5; y++) {
+                    for (int x = 0; x < 5; x++) {
+                        for (int z = 0; z < 5; z++) {
+                            if (x == 2 && z == 2 && (y == 1 || y == 2)) continue;
+                            samples.add(new Sample(x, y, z, "minecraft:sand"));
+                        }
                     }
                 }
+            }
+            case "desert_pyramid" -> {
+                return desertPyramidPattern();
             }
             case "jungle_pyramid" -> {
                 samples.add(new Sample(3, -2, 1, "minecraft:dispenser"));
@@ -600,5 +683,85 @@ public final class StructureFinderCatalog {
                 normalized.stream().mapToInt(Sample::x).max().orElse(0) + 1,
                 normalized.stream().mapToInt(Sample::y).max().orElse(0) + 1,
                 normalized.stream().mapToInt(Sample::z).max().orElse(0) + 1, normalized, anchor);
+    }
+
+    /** Minecraft 26.2 DesertPyramidPiece coordinates, with the Y=-14 base as origin. */
+    private static Pattern desertPyramidPattern() {
+        List<Sample> samples = new ArrayList<>();
+        Sample anchor = new Sample(10, 1, 10, "minecraft:tnt");
+        samples.add(anchor);
+        for (int x = 9; x <= 11; x++) {
+            for (int z = 9; z <= 11; z++) {
+                if (x != 10 || z != 10) samples.add(new Sample(x, 1, z, "minecraft:tnt"));
+            }
+        }
+        samples.add(new Sample(10, 2, 10, "minecraft:cut_sandstone"));
+        samples.add(new Sample(10, 3, 10, "minecraft:stone_pressure_plate"));
+        for (int offset : new int[]{-2, 2}) {
+            samples.add(new Sample(10 + offset, 3, 10, "minecraft:chest"));
+            samples.add(new Sample(10, 3, 10 + offset, "minecraft:chest"));
+        }
+        for (int x : new int[]{8, 12}) {
+            for (int z : new int[]{8, 12}) {
+                samples.add(new Sample(x, 0, z, "minecraft:cut_sandstone"));
+                samples.add(new Sample(x, 4, z, "minecraft:chiseled_sandstone"));
+                samples.add(new Sample(x, 5, z, "minecraft:cut_sandstone"));
+                samples.add(new Sample(x, 6, z, "minecraft:sandstone"));
+            }
+        }
+        samples.add(new Sample(10, 14, 10, "minecraft:blue_terracotta"));
+        int[][] orange = {{10, 7}, {10, 8}, {9, 9}, {11, 9}, {8, 10}, {12, 10},
+                {7, 10}, {13, 10}, {9, 11}, {11, 11}, {10, 12}, {10, 13}};
+        for (int[] point : orange) {
+            samples.add(new Sample(point[0], 14, point[1], "minecraft:orange_terracotta"));
+        }
+        for (int x : new int[]{0, 20}) {
+            for (int y : new int[]{2, 3, 5, 7}) {
+                samples.add(new Sample(x, y + 14, 2, "minecraft:orange_terracotta"));
+            }
+        }
+        // The trap and full structure bounds stay in the same vanilla frame.
+        // Do not infer this anchor from sample rarity: the center TNT is unique.
+        return new Pattern("desert_pyramid", "vanilla:desert_pyramid", 21, 29, 21, samples, anchor);
+    }
+
+    private static List<Pattern> monsterRoomPatterns() {
+        List<Pattern> result = new ArrayList<>();
+        for (int width : new int[]{7, 9}) {
+            for (int depth : new int[]{7, 9}) {
+                List<Sample> samples = new ArrayList<>();
+                Sample spawner = new Sample(width / 2, 1, depth / 2, "minecraft:spawner");
+                samples.add(spawner);
+                for (int x = 0; x < width; x++) {
+                    for (int z = 0; z < depth; z++) samples.add(new Sample(x, 0, z, "minecraft:cobblestone"));
+                }
+                // Floors have random cobblestone/mossy variants. Open walls,
+                // natural ceilings and optional chests are not reliable samples.
+                result.add(new Pattern("monster_room", "vanilla:monster_room_" + width + "x" + depth,
+                        width, 6, depth, samples, spawner));
+            }
+        }
+        return List.copyOf(result);
+    }
+
+    /** The 26.2 BridgeCrossing has four identical arms, with no random blocks. */
+    private static Pattern fortressCrossingPattern() {
+        List<Sample> samples = new ArrayList<>();
+        // The two side rails form an eight-point symmetry orbit. Interleave
+        // arms so an ordinary straight bridge fails before checking its length.
+        for (int[] point : new int[][]{{7, 2}, {2, 7}, {11, 16}, {16, 11},
+                {11, 2}, {2, 11}, {7, 16}, {16, 7}}) {
+            samples.add(new Sample(point[0], 5, point[1], "minecraft:nether_bricks"));
+        }
+        // Bridge surfaces, lower supports and the four end foundations.
+        // Every orbit is invariant under all X/Z rotations and mirrors.
+        for (int[] layer : new int[][]{{4, 0}, {3, 1}, {2, 2}, {0, 1}}) {
+            int y = layer[0], edge = layer[1];
+            for (int[] point : new int[][]{{9, edge}, {edge, 9}, {9, 18 - edge}, {18 - edge, 9}}) {
+                samples.add(new Sample(point[0], y, point[1], "minecraft:nether_bricks"));
+            }
+        }
+        return new Pattern("fortress", "vanilla:fortress_bridge_crossing", 19, 10, 19,
+                samples, samples.getFirst());
     }
 }

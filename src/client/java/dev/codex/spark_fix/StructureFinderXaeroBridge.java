@@ -1,6 +1,7 @@
 package dev.codex.spark_fix;
 
 import com.mojang.brigadier.arguments.StringArgumentType;
+import com.mojang.brigadier.arguments.IntegerArgumentType;
 import net.fabricmc.fabric.api.client.command.v2.ClientCommands;
 import net.fabricmc.fabric.api.client.command.v2.ClientCommandRegistrationCallback;
 import net.fabricmc.fabric.api.client.command.v2.FabricClientCommandSource;
@@ -10,6 +11,8 @@ import net.minecraft.client.multiplayer.ClientLevel;
 import net.minecraft.core.BlockPos;
 import net.minecraft.network.chat.ClickEvent;
 import net.minecraft.network.chat.Component;
+import net.minecraft.network.chat.HoverEvent;
+import net.minecraft.network.chat.MutableComponent;
 import net.minecraft.network.chat.Style;
 import net.minecraft.resources.ResourceKey;
 import net.minecraft.resources.Identifier;
@@ -17,7 +20,9 @@ import net.minecraft.resources.Identifier;
 import java.lang.reflect.Constructor;
 import java.lang.reflect.Method;
 import java.util.ArrayList;
+import java.util.Comparator;
 import java.util.HashMap;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
@@ -28,7 +33,11 @@ public final class StructureFinderXaeroBridge {
     private static final String COMMAND = "structure_waypoint";
     private static final String DELETE_COMMAND = "structure_waypoint_delete";
     private static final String DISMISS_COMMAND = "structure_highlight_dismiss";
-    private static final Map<String, Pending> PENDING = new HashMap<>();
+    private static final String RESULTS_COMMAND = "structure_results";
+    private static final int RESULTS_PER_PAGE = 8;
+    private static final int MAX_PENDING_LINKS = 8192;
+    private static final Map<String, Pending> PENDING = new LinkedHashMap<>(32, 0.75F, true);
+    private static final Map<LinkKey, String> LINK_TOKENS = new HashMap<>();
     private static boolean registered;
 
     private StructureFinderXaeroBridge() {}
@@ -38,6 +47,11 @@ public final class StructureFinderXaeroBridge {
         registered = true;
         ClientCommandRegistrationCallback.EVENT.register((dispatcher, registryAccess) ->
                 dispatcher.register(ClientCommands.literal("spark_fix")
+                        .then(ClientCommands.literal(RESULTS_COMMAND)
+                                .executes(context -> listNearbyResults(context.getSource(), 0))
+                                .then(ClientCommands.argument("page", IntegerArgumentType.integer(0))
+                                        .executes(context -> listNearbyResults(context.getSource(),
+                                                IntegerArgumentType.getInteger(context, "page")))))
                         .then(ClientCommands.literal(COMMAND)
                                 .requires(source -> isInstalled())
                                 .then(ClientCommands.argument("token", StringArgumentType.word())
@@ -58,21 +72,23 @@ public final class StructureFinderXaeroBridge {
     public static Component coordinateLink(StructureFinder.Detection detection) {
         BlockPos pos = detection.pos();
         Component coordinates = Component.literal(pos.getX() + " " + pos.getY() + " " + pos.getZ());
-        String token = UUID.randomUUID().toString().replace("-", "");
         ClientLevel level = Minecraft.getInstance().level;
         ResourceKey<?> dimension = level == null ? null : level.dimension();
-        synchronized (StructureFinderXaeroBridge.class) {
-            PENDING.put(token, new Pending(detection, level, dimension, null));
-        }
+        String token = rememberLink(detection, level, dimension);
         register();
         var result = Component.empty();
         if (isInstalled()) {
+            Component description = Component.translatable("structure_finder.structure." + detection.type())
+                    .append(Component.literal("  " + pos.getX() + " " + pos.getY() + " " + pos.getZ()));
             Style style = Style.EMPTY.withColor(0x55AAFF)
-                    .withClickEvent(new ClickEvent.RunCommand("/spark_fix " + COMMAND + " " + token));
+                    .withClickEvent(new ClickEvent.RunCommand("/spark_fix " + COMMAND + " " + token))
+                    .withHoverEvent(new HoverEvent.ShowText(description));
+            Component add = Component.translatable("chat.spark_fix.structure_finder.add_waypoint").withStyle(style);
             Component delete = Component.translatable("chat.spark_fix.structure_finder.delete_waypoint")
                     .withStyle(Style.EMPTY.withColor(0xFF8585)
                             .withClickEvent(new ClickEvent.RunCommand("/spark_fix " + DELETE_COMMAND + " " + token)));
-            result.append(coordinates.copy().withStyle(style)).append(Component.literal(" ")).append(delete);
+            result.append(coordinates.copy().withStyle(style)).append(Component.literal(" "))
+                    .append(add).append(Component.literal(" ")).append(delete);
         } else {
             result.append(coordinates);
         }
@@ -82,24 +98,110 @@ public final class StructureFinderXaeroBridge {
         return result.append(Component.literal(" ")).append(dismiss);
     }
 
+    static Component nearbyResultsLink() {
+        register();
+        return Component.translatable("chat.spark_fix.structure_finder.nearby_results")
+                .withStyle(Style.EMPTY.withColor(0x87B1F9)
+                        .withClickEvent(new ClickEvent.RunCommand("/spark_fix " + RESULTS_COMMAND)));
+    }
+
+    private static int listNearbyResults(FabricClientCommandSource source, int requestedPage) {
+        Minecraft client = source.getClient();
+        if (client.player == null || client.level == null) return 0;
+        var position = client.player.position();
+        List<NearbyResult> nearby = new ArrayList<>();
+        for (var group : StructureFinder.highlightGroups()) {
+            var closest = group.pieces().stream()
+                    .min(Comparator.comparingDouble(piece -> piece.bounds().distanceToSqr(position)));
+            if (closest.isEmpty()) continue;
+            var nearestPiece = closest.get();
+            double distance = nearestPiece.bounds().distanceToSqr(position);
+            if (distance <= 256.0 * 256.0) nearby.add(new NearbyResult(group.id(),
+                    groupWaypointTarget(group), distance));
+        }
+        nearby.sort(Comparator.comparingDouble(NearbyResult::distanceSquared));
+        if (nearby.isEmpty()) {
+            client.gui.chatListener().handleSystemMessage(
+                    Component.translatable("chat.spark_fix.structure_finder.no_nearby_results"), false);
+            return 1;
+        }
+        int pages = (nearby.size() + RESULTS_PER_PAGE - 1) / RESULTS_PER_PAGE;
+        int page = Math.min(requestedPage, pages - 1);
+        MutableComponent message = Component.translatable("chat.spark_fix.structure_finder.results_title")
+                .append(Component.literal(" " + (page + 1) + "/" + pages));
+        // Every group shares one waypoint target, even when the closest piece changes.
+        for (NearbyResult result : nearby.subList(page * RESULTS_PER_PAGE,
+                Math.min(nearby.size(), (page + 1) * RESULTS_PER_PAGE))) {
+            var detection = result.detection();
+            message.append(Component.literal("\n"));
+            message.append(Component.translatable("structure_finder.structure." + detection.type())
+                    .withColor(StructureFinderHighlight.typeColor(detection.type())));
+            message.append(Component.literal(" #" + result.groupId() + "  "));
+            message.append(coordinateLink(detection));
+        }
+        if (page > 0) message.append(Component.literal("\n"))
+                .append(resultsPageLink("chat.spark_fix.structure_finder.previous_results", page - 1));
+        if (page + 1 < pages) message.append(Component.literal(page > 0 ? " " : "\n"))
+                .append(resultsPageLink("chat.spark_fix.structure_finder.next_results", page + 1));
+        client.gui.chatListener().handleSystemMessage(message, false);
+        return nearby.size();
+    }
+
+    private static Component resultsPageLink(String key, int page) {
+        return Component.translatable(key).withStyle(Style.EMPTY.withColor(0x87B1F9)
+                .withClickEvent(new ClickEvent.RunCommand("/spark_fix " + RESULTS_COMMAND + " " + page)));
+    }
+
+    private record NearbyResult(long groupId, StructureFinder.Detection detection, double distanceSquared) {}
+
+    static StructureFinder.Detection groupWaypointTarget(StructureFinderResults.HighlightGroup group) {
+        return group.detection();
+    }
+
+    /** Repeated paging keeps the same actions and original waypoint set alive. */
+    static synchronized String rememberLink(StructureFinder.Detection detection, ClientLevel level,
+                                            ResourceKey<?> dimension) {
+        LinkKey key = new LinkKey(level, dimension, detection.type(), detection.pos());
+        String token = LINK_TOKENS.get(key);
+        Pending previous = token == null ? null : PENDING.get(token);
+        if (previous == null) {
+            token = UUID.randomUUID().toString().replace("-", "");
+            LINK_TOKENS.put(key, token);
+        }
+        PENDING.put(token, new Pending(detection, level, dimension,
+                previous == null ? null : previous.waypointSet));
+        if (PENDING.size() > MAX_PENDING_LINKS) {
+            var oldest = PENDING.entrySet().iterator();
+            var expired = oldest.next();
+            Pending removed = expired.getValue();
+            LINK_TOKENS.remove(new LinkKey(removed.level, removed.dimension,
+                    removed.detection.type(), removed.detection.pos()), expired.getKey());
+            oldest.remove();
+        }
+        return token;
+    }
+
+    private static synchronized Pending pendingLink(String token) {
+        return PENDING.get(token);
+    }
+
     public static synchronized void clear() {
         PENDING.clear();
+        LINK_TOKENS.clear();
     }
 
     private static int addWaypoint(FabricClientCommandSource source, String token) {
-        Pending pending;
-        synchronized (StructureFinderXaeroBridge.class) {
-            pending = PENDING.get(token);
-        }
+        Pending pending = pendingLink(token);
         Minecraft client = source.getClient();
-        if (pending == null || !sameWorld(client.level, pending)) return 0;
+        if (pending == null || !sameWorld(client.level, pending)) return expiredLink(client);
         try {
             Object session = currentMinimapSession();
-            if (session == null) return 0;
-            Object world = currentXaeroWorld(session, pending.dimension);
-            if (world == null) return 0;
-            Object set = invoke(world, "getCurrentWaypointSet");
-            if (set == null) return 0;
+            Object world = session == null ? null : currentXaeroWorld(session, pending.dimension);
+            Object set = world == null ? null : invoke(world, "getCurrentWaypointSet");
+            if (set == null) {
+                notify(client, "chat.spark_fix.structure_finder.waypoint_failed", pending, pending.detection.pos());
+                return 0;
+            }
             BlockPos pos = pending.detection.pos();
             for (Object existing : (Iterable<?>) invoke(set, "getWaypoints")) {
                 if (matchesWaypoint(existing, pending.name(), pos.getX(), pos.getY(), pos.getZ())) {
@@ -130,17 +232,17 @@ public final class StructureFinderXaeroBridge {
     }
 
     private static int deleteWaypoint(FabricClientCommandSource source, String token) {
-        Pending pending;
-        synchronized (StructureFinderXaeroBridge.class) {
-            pending = PENDING.get(token);
-        }
+        Pending pending = pendingLink(token);
         Minecraft client = source.getClient();
-        if (pending == null || !sameWorld(client.level, pending)) return 0;
+        if (pending == null || !sameWorld(client.level, pending)) return expiredLink(client);
         try {
             Object session = currentMinimapSession();
-            if (session == null) return 0;
-            Object world = currentXaeroWorld(session, pending.dimension);
-            if (world == null) return 0;
+            Object world = session == null ? null : currentXaeroWorld(session, pending.dimension);
+            if (world == null) {
+                notify(client, "chat.spark_fix.structure_finder.waypoint_delete_failed", pending,
+                        pending.detection.pos());
+                return 0;
+            }
             BlockPos pos = pending.detection.pos();
             if (!deleteAndSave(world, pending.waypointSet, pending.name(), pos.getX(), pos.getY(),
                     pos.getZ(), invoke(session, "getWorldManagerIO"))) {
@@ -212,18 +314,21 @@ public final class StructureFinderXaeroBridge {
     }
 
     private static int dismissHighlight(FabricClientCommandSource source, String token) {
-        Pending pending;
-        synchronized (StructureFinderXaeroBridge.class) {
-            pending = PENDING.get(token);
-        }
+        Pending pending = pendingLink(token);
         Minecraft client = source.getClient();
-        if (pending == null || !sameWorld(client.level, pending)) return 0;
+        if (pending == null || !sameWorld(client.level, pending)) return expiredLink(client);
         boolean dismissed = StructureFinder.dismissHighlight(pending.detection);
         notify(client, dismissed
                         ? "chat.spark_fix.structure_finder.highlight_dismissed"
                         : "chat.spark_fix.structure_finder.highlight_not_found",
                 pending, pending.detection.pos());
         return dismissed ? 1 : 0;
+    }
+
+    private static int expiredLink(Minecraft client) {
+        if (client.gui != null) client.gui.chatListener().handleSystemMessage(
+                Component.translatable("chat.spark_fix.structure_finder.link_expired"), false);
+        return 0;
     }
 
     private static Object currentMinimapSession() throws ReflectiveOperationException {
@@ -244,7 +349,8 @@ public final class StructureFinderXaeroBridge {
     private static void notify(Minecraft client, String key, Pending pending, BlockPos pos) {
         if (client.gui != null) {
             client.gui.chatListener().handleSystemMessage(Component.translatable(key,
-                    pending.name(), pos.getX(), pos.getY(), pos.getZ()), false);
+                    Component.literal(pending.name()), Component.literal(Integer.toString(pos.getX())),
+                    Component.literal(Integer.toString(pos.getY())), Component.literal(Integer.toString(pos.getZ()))), false);
         }
     }
 
@@ -281,6 +387,8 @@ public final class StructureFinderXaeroBridge {
     private static String stringValue(Object target, String method) throws ReflectiveOperationException {
         return String.valueOf(invoke(target, method));
     }
+
+    private record LinkKey(ClientLevel level, ResourceKey<?> dimension, String type, BlockPos pos) {}
 
     private record Pending(StructureFinder.Detection detection, ClientLevel level,
                            ResourceKey<?> dimension, Object waypointSet) {

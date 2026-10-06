@@ -28,14 +28,26 @@ public abstract class StructureFinderPauseScreenMixin extends Screen {
         PauseScreen pause = (PauseScreen) (Object) this;
         if (!SparkFixConfig.structureFinderEnabledAtStartup() || !pause.showsPauseMenu()) return;
 
-        // Find the actual tool row, including other mods' buttons, rather than
-        // assuming a resource pack or a fixed menu layout.
-        Map<Integer, int[]> rows = new LinkedHashMap<>();
         List<AbstractWidget> widgets = new ArrayList<>();
+        int menuLeft = width / 2 - 102;
+        int menuRight = width / 2 + 102;
+        int menuWidth = 0;
         for (GuiEventListener child : pause.children()) {
-            if (!(child instanceof AbstractWidget widget)) continue;
+            if (!(child instanceof AbstractWidget widget) || !widget.visible) continue;
             widgets.add(widget);
+            if (widget.getWidth() > menuWidth && widget.getWidth() >= 100
+                    && widget.getX() <= width / 2 && widget.getRight() >= width / 2) {
+                menuLeft = widget.getX();
+                menuRight = widget.getRight();
+                menuWidth = widget.getWidth();
+            }
+        }
+        // Flashback's recording controls form a separate column of 20px buttons.
+        // Only buttons inside the main menu belong to its horizontal tool row.
+        Map<Integer, int[]> rows = new LinkedHashMap<>();
+        for (AbstractWidget widget : widgets) {
             if (widget.getWidth() != 20 || widget.getHeight() != 20) continue;
+            if (widget.getX() < menuLeft || widget.getRight() > menuRight) continue;
             int[] row = rows.computeIfAbsent(widget.getY(), ignored -> new int[]{0, 0});
             row[0]++;
             row[1] = Math.max(row[1], widget.getRight());
@@ -50,6 +62,15 @@ public abstract class StructureFinderPauseScreenMixin extends Screen {
             right = row.getValue()[1];
         }
         int x = right + 4;
+        // Fill a gap in the menu before extending beyond it. Check all widgets
+        // for collisions so controls from any optional mod keep their own space.
+        if (x + 20 > menuRight || !sparkFix$freeSlot(widgets, x, rowY)) {
+            for (int candidateX = menuLeft; candidateX + 20 <= menuRight; candidateX += 4) {
+                if (!sparkFix$freeSlot(widgets, candidateX, rowY)) continue;
+                x = candidateX;
+                break;
+            }
+        }
         // Preserve every existing control even when a narrow window or another
         // mod fills the tool row. Prefer the right side before a free top corner.
         if (!sparkFix$freeSlot(widgets, x, rowY)) {
