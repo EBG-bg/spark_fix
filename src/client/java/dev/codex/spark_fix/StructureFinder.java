@@ -77,7 +77,10 @@ public final class StructureFinder {
     // Chunk packets and scanning both run on the client thread. Refresh this
     // cache every tick rather than keeping stale chunk objects across packets.
     private static final Long2ObjectOpenHashMap<LevelChunk> TICK_CHUNKS = new Long2ObjectOpenHashMap<>();
-    private static final StructureFinderResults RESULTS = new StructureFinderResults();
+    // Keep disk timestamps and monotonic highlight lifetimes exactly reversible
+    // throughout this session, including repeated rescans and state changes.
+    private static final long DISCOVERY_EPOCH_OFFSET_MILLIS = System.currentTimeMillis() - System.nanoTime() / 1_000_000;
+    private static final StructureFinderResults RESULTS = new StructureFinderResults(StructureFinder::rememberDiscoveryState);
     private static Set<String> selected = Set.of();
     private static Set<Block> relevantMaterials = Set.of();
     private static Set<Block> pendingRelevantMaterials;
@@ -200,17 +203,13 @@ public final class StructureFinder {
      * highlight; changing the selected structure types clears that history.
      */
     public static boolean dismissHighlight(Detection detection) {
-        List<Detection> pieces = RESULTS.rememberedPieces(detection);
         if (!RESULTS.dismiss(detection)) return false;
-        if (scanCache != null) scanCache.dismiss(pieces.isEmpty() ? List.of(detection) : pieces);
         detections = RESULTS.detections();
         return true;
     }
 
     public static int dismissAllHighlights() {
-        List<Detection> pieces = highlightGroups().stream().flatMap(group -> group.pieces().stream()).toList();
         int dismissed = RESULTS.dismissAll();
-        if (scanCache != null) scanCache.dismiss(pieces);
         detections = RESULTS.detections();
         return dismissed;
     }
@@ -465,6 +464,12 @@ public final class StructureFinder {
         cacheIdentity = null;
     }
 
+    private static void rememberDiscoveryState(StructureFinderResults.DiscoveryState state) {
+        if (scanCache == null) return;
+        scanCache.remember(state.pieces(), Math.max(0, state.firstDetectedAt() + DISCOVERY_EPOCH_OFFSET_MILLIS),
+                state.dismissed());
+    }
+
     private static void prepareScanCache(Minecraft client) {
         String identity;
         var server = client.getSingleplayerServer();
@@ -484,7 +489,8 @@ public final class StructureFinder {
         Path directory = FabricLoader.getInstance().getConfigDir().resolve("spark_fix")
                 .resolve("structure-scan-cache").resolve(digest(identity).substring(0, 32));
         scanCache = new StructureFinderScanCache(directory.resolve(
-                digest(dimension + '\n' + rules).substring(0, 32) + ".jsonl.gz"), rules);
+                digest(dimension + '\n' + rules).substring(0, 32) + ".jsonl.gz"), rules,
+                directory.resolve(digest(dimension).substring(0, 32) + ".history.jsonl.gz"));
         cacheIdentity = key;
     }
 
@@ -719,16 +725,23 @@ public final class StructureFinder {
                 if (job.pendingDetections == null) job.pendingDetections = job.future.get();
                 // All shared result state and chat notifications stay on the client thread.
                 // Large result batches obey the same frame budget as preparation.
-                long now = System.nanoTime() / 1_000_000;
                 while (job.resultIndex < job.pendingDetections.size()) {
                     if (System.nanoTime() >= deadline) return;
                     Detection detection = job.pendingDetections.get(job.resultIndex++);
                     String type = detection.type();
-                    long age = job.cacheEntry == null ? 0 : Math.max(0,
-                            System.currentTimeMillis() - job.cacheEntry.scannedAt().getOrDefault(type, System.currentTimeMillis()));
-                    RESULTS.add(detection, now - age);
-                    if (age >= 3_600_000 || (job.cacheEntry != null && job.cacheEntry.dismissed()
-                            .contains(StructureFinderScanCache.detectionKey(detection)))) RESULTS.dismiss(detection);
+                    long now = System.nanoTime() / 1_000_000;
+                    long wallNow = now + DISCOVERY_EPOCH_OFFSET_MILLIS;
+                    long discoveredAt = job.cacheEntry == null ? wallNow
+                            : job.cacheEntry.scannedAt().getOrDefault(type, wallNow);
+                    boolean dismissed = job.cacheEntry != null && job.cacheEntry.dismissed()
+                            .contains(StructureFinderScanCache.detectionKey(detection));
+                    if (scanCache != null) {
+                        var state = scanCache.observation(detection, discoveredAt, dismissed);
+                        discoveredAt = state.firstDetectedAt();
+                        dismissed |= state.dismissed();
+                    }
+                    long age = Math.max(0, wallNow - discoveredAt);
+                    RESULTS.add(detection, now, now - age, dismissed);
                 }
                 if (scanCache != null && job.cacheEntry != null && job.missingChunks.isEmpty()) {
                     scanCache.put(job.cacheEntry);

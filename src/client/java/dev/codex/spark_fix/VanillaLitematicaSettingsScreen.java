@@ -899,6 +899,9 @@ class VanillaLitematicaSettingsScreen extends Screen {
     private void openChildScreen(Screen editor) {
         scrollTo(scroll);
         setFocused(null);
+        // This parent may never be shown again if the connection closes in the editor.
+        // Its confirmed state is independent of the child's unconfirmed draft.
+        saveConfirmedSettings();
         openingChildScreen = true;
         try {
             minecraft.setScreenAndShow(editor);
@@ -1545,6 +1548,10 @@ class VanillaLitematicaSettingsScreen extends Screen {
         if (savedOnClose) return;
         setFocused(null);
         savedOnClose = true;
+        saveConfirmedSettings();
+    }
+
+    private void saveConfirmedSettings() {
         customAliases.save(litematicaAliases, aliasPrimaryNames());
         SparkFixConfig.updateLitematicaCustomAliases(customAliases.savedAliases(), customAliases.deletedAliases());
         SparkFixConfig.setLitematicaSettingsSnapshot(favoriteOrder, settingsOrder,

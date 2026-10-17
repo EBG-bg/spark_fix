@@ -7,10 +7,12 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.util.function.Consumer;
 
 /** Groups recognised pieces and batches local notifications without accessing a world. */
 final class StructureFinderResults {
     private static final int MAX_DETECTIONS = 256;
+    private static final int MAX_REMEMBERED_GROUPS = 1024;
     private static final int MAX_PIECES_PER_GROUP = 512;
     // Client evidence has no structure-start ID. Tolerate gaps between sparse
     // real pieces, but bound large structures so nearby sites cannot chain forever.
@@ -34,11 +36,30 @@ final class StructureFinderResults {
     private static final long HIGHLIGHT_LIFETIME_MILLIS = 60 * 60 * 1_000;
     private static final long NOTIFICATION_INTERVAL_MILLIS = 2_000;
     private final List<Group> groups = new ArrayList<>();
+    private final Consumer<DiscoveryState> remember;
     private List<StructureFinder.Detection> snapshot = List.of();
     private volatile List<HighlightGroup> highlightSnapshot = List.of();
     private long notifyAt = -1;
     private long expireAt = Long.MAX_VALUE;
     private long discoverySequence;
+
+    StructureFinderResults() { this(state -> {}); }
+
+    StructureFinderResults(Consumer<DiscoveryState> remember) { this.remember = remember; }
+
+    record DiscoveryState(List<StructureFinder.Detection> pieces, long firstDetectedAt, boolean dismissed) {}
+
+    private void remember(Group group) {
+        remember.accept(new DiscoveryState(List.copyOf(group.pieces.values()), group.firstDetectedAt, group.dismissed));
+    }
+
+    private void trimHistory() {
+        while (groups.size() > MAX_REMEMBERED_GROUPS) {
+            Group oldest = groups.stream().filter(group -> !group.visible)
+                    .min(java.util.Comparator.comparingLong(group -> group.sequence)).orElseThrow();
+            groups.remove(oldest);
+        }
+    }
 
     List<StructureFinder.Detection> detections() { return snapshot; }
 
@@ -106,6 +127,7 @@ final class StructureFinderResults {
                 group.visible = false;
                 group.announced = true;
                 group.activePieces.clear();
+                remember(group);
             } else expireAt = Math.min(expireAt, deadline);
         }
         if (changed) updateSnapshot();
@@ -113,7 +135,12 @@ final class StructureFinderResults {
     }
 
     void add(StructureFinder.Detection detection, long nowMillis) {
+        add(detection, nowMillis, nowMillis, false);
+    }
+
+    void add(StructureFinder.Detection detection, long nowMillis, long discoveredAt, boolean suppressed) {
         expire(nowMillis);
+        suppressed |= nowMillis - discoveredAt >= HIGHLIGHT_LIFETIME_MILLIS;
         PieceKey key = PieceKey.of(detection);
         // The usual rescan is a no-op. Do not copy all stored pieces, rebuild
         // snapshots or walk every corridor for the same successful match.
@@ -122,12 +149,13 @@ final class StructureFinderResults {
             if (old == null) continue;
             if (group.dismissed) return;
             var active = group.activePieces.get(key);
-            if (group.visible && active != null && active.similarity() >= detection.similarity()) return;
+            if (!suppressed && group.firstDetectedAt <= discoveredAt && group.visible
+                    && active != null && active.similarity() >= detection.similarity()) return;
             break;
         }
         boolean announced = false;
-        boolean dismissed = false;
-        long firstDetectedAt = nowMillis;
+        boolean dismissed = suppressed;
+        long firstDetectedAt = discoveredAt;
         long sequence = discoverySequence;
         Map<PieceKey, StructureFinder.Detection> pieces = new LinkedHashMap<>();
         Map<PieceKey, StructureFinder.Detection> activePieces = new LinkedHashMap<>();
@@ -155,6 +183,7 @@ final class StructureFinderResults {
         if (connected.size() == 1) {
             Group old = connected.getFirst();
             if (old.pieces.equals(pieces) && old.activePieces.equals(activePieces)
+                    && old.firstDetectedAt == firstDetectedAt && old.dismissed == dismissed
                     && (old.visible || dismissed)) return;
         }
         groups.removeAll(connected);
@@ -166,6 +195,7 @@ final class StructureFinderResults {
             oldest.dismissed = true;
             oldest.announced = true;
             oldest.activePieces.clear();
+            remember(oldest);
         }
         if (connected.isEmpty()) discoverySequence++;
         // Keep the earliest group's representative stable for existing chat links.
@@ -182,7 +212,10 @@ final class StructureFinderResults {
         }
         StructureFinder.Detection merged = new StructureFinder.Detection(detection.type(), representative.pos(),
                 bounds, strongest);
-        groups.add(new Group(merged, pieces, activePieces, announced, dismissed, firstDetectedAt, sequence));
+        Group added = new Group(merged, pieces, activePieces, announced, dismissed, firstDetectedAt, sequence);
+        groups.add(added);
+        remember(added);
+        trimHistory();
         if (!dismissed) expireAt = Math.min(expireAt, firstDetectedAt + HIGHLIGHT_LIFETIME_MILLIS);
         if (!announced && !dismissed && notifyAt < 0) notifyAt = nowMillis + NOTIFICATION_INTERVAL_MILLIS;
         updateSnapshot();
@@ -211,6 +244,7 @@ final class StructureFinderResults {
             group.visible = false;
             group.activePieces.clear();
             group.announced = true;
+            remember(group);
         }
         notifyAt = -1;
         expireAt = Long.MAX_VALUE;
@@ -224,6 +258,7 @@ final class StructureFinderResults {
         group.activePieces.clear();
         // A dismissed group must never leak through the pending notification batch.
         group.announced = true;
+        remember(group);
         updateSnapshot();
         if (groups.stream().noneMatch(StructureFinderResults::pending)) {
             notifyAt = -1;

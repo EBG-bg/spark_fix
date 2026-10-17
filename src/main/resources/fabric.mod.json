@@ -43,6 +43,10 @@
                        "environment":  "client"
                    },
                    {
+                       "config":  "spark_fix.locator_plus_compat.client.mixins.json",
+                       "environment":  "client"
+                   },
+                   {
                        "config":  "spark_fix.xaero_compat.client.mixins.json",
                        "environment":  "client"
                    },

@@ -15,11 +15,14 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Locale;
 import java.util.Optional;
+import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicReference;
 
 /** Starts ADOFAI through Steam and restores its window to the foreground on Windows. */
 public final class SteamLauncher {
     private static final String GAME_ID = "977950";
+    private static final long REGISTRY_QUERY_TIMEOUT_MILLIS = 1_500L;
+    private static final int MAX_REGISTRY_OUTPUT_BYTES = 65_536;
     private static Thread launchThread;
     private static volatile LaunchStatus launchStatus = new LaunchStatus(Stage.IDLE, 0);
 
@@ -117,7 +120,7 @@ public final class SteamLauncher {
                 || value.contains("a dance of fire and ice");
     }
 
-    private static void launchFromSteam() throws IOException {
+    private static void launchFromSteam() throws IOException, InterruptedException {
         Path steam = findSteamExecutable().orElseThrow(
                 () -> new IOException("Steam.exe was not found in the running processes, registry, or default folders"));
         AdofoigoMod.LOGGER.info("Launching ADOFAI through {}", steam);
@@ -127,13 +130,16 @@ public final class SteamLauncher {
         }
     }
 
-    private static Optional<Path> findSteamExecutable() {
-        Optional<Path> runningSteam = ProcessHandle.allProcesses()
+    private static Optional<Path> findSteamExecutable() throws InterruptedException {
+        Optional<Path> runningSteam;
+        try (var processes = ProcessHandle.allProcesses()) {
+            runningSteam = processes
                 .map(process -> process.info().command())
                 .flatMap(Optional::stream)
                 .map(SteamLauncher::pathOrNull)
                 .filter(path -> path != null && isSteamExecutable(path))
                 .findFirst();
+        }
         if (runningSteam.isPresent()) {
             return runningSteam;
         }
@@ -156,18 +162,16 @@ public final class SteamLauncher {
         return candidates.stream().filter(SteamLauncher::isSteamExecutable).findFirst();
     }
 
-    private static Optional<Path> queryRegistry(String key, String valueName, boolean directoryValue) {
+    private static Optional<Path> queryRegistry(String key, String valueName, boolean directoryValue)
+            throws InterruptedException {
+        if (Thread.currentThread().isInterrupted()) throw new InterruptedException();
         try {
+            Charset consoleCharset = Charset.forName(
+                    System.getProperty("sun.jnu.encoding", Charset.defaultCharset().name()));
             Process process = new ProcessBuilder("reg.exe", "query", key, "/v", valueName)
                     .redirectErrorStream(true)
                     .start();
-            Charset consoleCharset = Charset.forName(
-                    System.getProperty("sun.jnu.encoding", Charset.defaultCharset().name()));
-            String output = new String(process.getInputStream().readAllBytes(), consoleCharset);
-            if (process.waitFor() != 0) {
-                return Optional.empty();
-            }
-            return output.lines()
+            return readRegistryOutput(process, consoleCharset).stream().flatMap(String::lines)
                     .filter(line -> line.contains("REG_SZ"))
                     .map(line -> line.substring(line.indexOf("REG_SZ") + "REG_SZ".length()).trim())
                     .map(SteamLauncher::pathOrNull)
@@ -178,9 +182,34 @@ public final class SteamLauncher {
         } catch (IOException exception) {
             AdofoigoMod.LOGGER.debug("Could not read Steam path from registry key {}", key, exception);
             return Optional.empty();
-        } catch (InterruptedException exception) {
-            Thread.currentThread().interrupt();
-            return Optional.empty();
+        }
+    }
+
+    private static Optional<String> readRegistryOutput(Process process, Charset charset)
+            throws IOException, InterruptedException {
+        try {
+            // A single registry value is small. Waiting first also bounds a producer
+            // blocked by unexpectedly large output, before any blocking stream read.
+            if (!process.waitFor(REGISTRY_QUERY_TIMEOUT_MILLIS, TimeUnit.MILLISECONDS)) {
+                AdofoigoMod.LOGGER.debug("Steam registry query timed out");
+                return Optional.empty();
+            }
+            if (process.exitValue() != 0) return Optional.empty();
+            byte[] output = process.getInputStream().readNBytes(MAX_REGISTRY_OUTPUT_BYTES + 1);
+            if (output.length > MAX_REGISTRY_OUTPUT_BYTES) {
+                AdofoigoMod.LOGGER.debug("Steam registry query returned too much output");
+                return Optional.empty();
+            }
+            return Optional.of(new String(output, charset));
+        } finally {
+            if (process.isAlive()) process.destroyForcibly();
+            try (var output = process.getInputStream();
+                 var error = process.getErrorStream();
+                 var input = process.getOutputStream()) {
+                // Close every pipe, including when another pipe fails to close.
+            } catch (IOException exception) {
+                AdofoigoMod.LOGGER.debug("Could not close Steam registry query streams", exception);
+            }
         }
     }
 

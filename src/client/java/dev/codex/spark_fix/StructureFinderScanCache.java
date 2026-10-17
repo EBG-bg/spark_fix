@@ -45,6 +45,7 @@ final class StructureFinderScanCache implements AutoCloseable {
     private static final Gson GSON = new GsonBuilder().disableHtmlEscaping().create();
     private static final int FORMAT = 1;
     private static final int MAX_RECORDS = 100_000;
+    private static final int MAX_HISTORY = 100_000;
     private static final int MAX_LINE_CHARS = 1_048_576;
     private static final long MAX_BYTES = 64L * 1024 * 1024;
     private static final long SAVE_DELAY_SECONDS = 5;
@@ -116,12 +117,20 @@ final class StructureFinderScanCache implements AutoCloseable {
         }
     }
 
+    /** User state is independent of the block signatures that may be invalidated. */
+    record Observation(long firstDetectedAt, boolean dismissed) {
+        Observation {
+            if (firstDetectedAt < 0) throw new IllegalArgumentException("Invalid discovery timestamp");
+        }
+    }
+
     private final Path file;
+    private final Path historyFile;
     private final String rules;
     private final ScheduledExecutorService io = IO;
     private final LinkedHashMap<Long, Entry> entries = new LinkedHashMap<>(128, 0.75F, true);
+    private final LinkedHashMap<String, Observation> observations = new LinkedHashMap<>(128, 0.75F, true);
     private final Set<Long> removedDuringLoad = new HashSet<>();
-    private final Set<String> dismissedDuringLoad = new HashSet<>();
     private ScheduledFuture<?> pendingSave;
     private volatile boolean ready;
     private boolean closed;
@@ -129,7 +138,12 @@ final class StructureFinderScanCache implements AutoCloseable {
     private long savedRevision;
 
     StructureFinderScanCache(Path file, String rules) {
+        this(file, rules, file.resolveSibling(file.getFileName() + ".history.jsonl.gz"));
+    }
+
+    StructureFinderScanCache(Path file, String rules, Path historyFile) {
         this.file = Objects.requireNonNull(file).toAbsolutePath().normalize();
+        this.historyFile = Objects.requireNonNull(historyFile).toAbsolutePath().normalize();
         this.rules = Objects.requireNonNull(rules);
         if (rules.length() > 4096) throw new IllegalArgumentException("Invalid cache rules identifier");
         io.execute(this::load);
@@ -140,20 +154,32 @@ final class StructureFinderScanCache implements AutoCloseable {
     }
 
     synchronized Entry get(long chunk) {
+        // Live discovery state is merged per detection when results are collected.
         return entries.get(chunk);
+    }
+
+    synchronized Observation observation(StructureFinder.Detection detection, long fallbackTime, boolean dismissed) {
+        Observation stored = observations.get(detectionKey(detection));
+        return stored == null ? new Observation(Math.max(0, fallbackTime), dismissed) : stored;
+    }
+
+    synchronized void remember(Collection<StructureFinder.Detection> detections, long discoveredAt, boolean dismissed) {
+        if (closed) return;
+        boolean changed = false;
+        for (var detection : detections) {
+            changed |= mergeObservation(observations, detectionKey(detection), new Observation(discoveredAt, dismissed));
+        }
+        if (changed) {
+            revision++;
+            scheduleSave();
+        }
     }
 
     synchronized void put(Entry entry) {
         if (closed) return;
-        Entry existing = entries.get(entry.chunk());
-        // A scan may finish after the player has dismissed one of its cached pieces.
-        if (existing != null && !existing.dismissed().isEmpty()) {
-            var dismissed = new HashSet<>(entry.dismissed());
-            dismissed.addAll(existing.dismissed());
-            entry = new Entry(entry.chunk(), entry.content(), entry.scanned(), entry.scannedAt(), dismissed);
-        }
+        boolean historyChanged = rememberEntry(observations, entry);
         Entry previous = entries.put(entry.chunk(), entry);
-        if (!entry.equals(previous)) {
+        if (!entry.equals(previous) || historyChanged) {
             trim(entries);
             revision++;
             scheduleSave();
@@ -172,27 +198,7 @@ final class StructureFinderScanCache implements AutoCloseable {
 
     synchronized void dismiss(Collection<StructureFinder.Detection> detections) {
         if (closed || detections.isEmpty()) return;
-        var keys = new HashSet<String>();
-        for (var detection : detections) keys.add(detectionKey(detection));
-        boolean changed = !ready && dismissedDuringLoad.addAll(keys);
-        for (var slot : entries.entrySet()) {
-            Entry entry = slot.getValue();
-            var dismissed = new HashSet<>(entry.dismissed());
-            for (var cached : entry.scanned().values()) {
-                for (var detection : cached) {
-                    String key = detectionKey(detection);
-                    if (keys.contains(key)) dismissed.add(key);
-                }
-            }
-            if (!dismissed.equals(entry.dismissed())) {
-                slot.setValue(new Entry(entry.chunk(), entry.content(), entry.scanned(), entry.scannedAt(), dismissed));
-                changed = true;
-            }
-        }
-        if (changed) {
-            revision++;
-            scheduleSave();
-        }
+        remember(detections, System.currentTimeMillis(), true);
     }
 
     static String detectionKey(StructureFinder.Detection detection) {
@@ -237,6 +243,7 @@ final class StructureFinderScanCache implements AutoCloseable {
 
     private void load() {
         var loaded = new LinkedHashMap<Long, Entry>(128, 0.75F, true);
+        var history = loadHistory();
         if (Files.isRegularFile(file)) {
             try (var input = new LimitedInputStream(new GZIPInputStream(Files.newInputStream(file)));
                  var reader = new BufferedReader(new InputStreamReader(input, StandardCharsets.UTF_8))) {
@@ -263,37 +270,42 @@ final class StructureFinderScanCache implements AutoCloseable {
             }
         }
         synchronized (this) {
+            // Migrate old per-chunk timestamps/flags before accepting newly produced state.
+            boolean migrated = false;
+            for (Entry entry : loaded.values()) migrated |= rememberEntry(history, entry);
+            for (var state : observations.entrySet()) mergeObservation(history, state.getKey(), state.getValue());
+            observations.clear();
+            observations.putAll(history);
             // Records produced during asynchronous loading take precedence over the file.
             removedDuringLoad.forEach(loaded::remove);
             removedDuringLoad.clear();
             loaded.putAll(entries);
-            if (!dismissedDuringLoad.isEmpty()) {
-                for (var slot : loaded.entrySet()) {
-                    Entry entry = slot.getValue();
-                    var dismissed = new HashSet<>(entry.dismissed());
-                    dismissed.addAll(dismissedDuringLoad);
-                    slot.setValue(new Entry(entry.chunk(), entry.content(), entry.scanned(), entry.scannedAt(), dismissed));
-                }
-                dismissedDuringLoad.clear();
-            }
             entries.clear();
             entries.putAll(loaded);
             trim(entries);
+            if (migrated) {
+                // A read-only migration must survive close or a switch to another rules file.
+                revision++;
+                if (!closed) scheduleSave();
+            }
             ready = true;
         }
     }
 
     private void save() {
         List<Entry> snapshot;
+        Map<String, Observation> history;
         long savingRevision;
         synchronized (this) {
             pendingSave = null;
             if (revision == savedRevision) return;
             snapshot = new ArrayList<>(entries.values());
+            history = new LinkedHashMap<>(observations);
             savingRevision = revision;
         }
         Path temporary = null;
         try {
+            saveHistory(history);
             Files.createDirectories(file.getParent());
             temporary = Files.createTempFile(file.getParent(), file.getFileName().toString(), ".tmp");
             var header = new JsonObject();
@@ -328,6 +340,9 @@ final class StructureFinderScanCache implements AutoCloseable {
         } catch (IOException | RuntimeException exception) {
             LOGGER.warn("Could not save Structure Finder scan cache {}; preserving the previous file",
                     file.getFileName(), exception);
+            synchronized (this) {
+                if (!closed && revision != savedRevision) scheduleSave();
+            }
         } finally {
             if (temporary != null) {
                 try {
@@ -337,6 +352,80 @@ final class StructureFinderScanCache implements AutoCloseable {
                 }
             }
         }
+    }
+
+    private static boolean mergeObservation(LinkedHashMap<String, Observation> history,
+                                            String key, Observation incoming) {
+        Observation previous = history.get(key);
+        Observation merged = previous == null ? incoming : new Observation(
+                Math.min(previous.firstDetectedAt(), incoming.firstDetectedAt()), previous.dismissed() || incoming.dismissed());
+        if (merged.equals(previous)) return false;
+        history.put(key, merged);
+        while (history.size() > MAX_HISTORY) history.remove(history.keySet().iterator().next());
+        return true;
+    }
+
+    private static boolean rememberEntry(LinkedHashMap<String, Observation> history, Entry entry) {
+        boolean changed = false;
+        for (var type : entry.scanned().entrySet()) {
+            long discovered = Math.min(System.currentTimeMillis(), entry.scannedAt().get(type.getKey()));
+            for (var detection : type.getValue()) {
+                String key = detectionKey(detection);
+                changed |= mergeObservation(history, key, new Observation(discovered, entry.dismissed().contains(key)));
+            }
+        }
+        return changed;
+    }
+
+    private LinkedHashMap<String, Observation> loadHistory() {
+        var history = new LinkedHashMap<String, Observation>(128, 0.75F, true);
+        if (!Files.isRegularFile(historyFile)) return history;
+        try (var input = new LimitedInputStream(new GZIPInputStream(Files.newInputStream(historyFile)));
+             var reader = new BufferedReader(new InputStreamReader(input, StandardCharsets.UTF_8))) {
+            String header = readLine(reader);
+            if (header == null || JsonParser.parseString(header).getAsJsonObject().get("format").getAsInt() != 1) {
+                throw new IOException("Unsupported discovery history format");
+            }
+            String line;
+            int malformed = 0;
+            while ((line = readLine(reader)) != null) {
+                try {
+                    var item = JsonParser.parseString(line).getAsJsonArray();
+                    String key = item.get(0).getAsString();
+                    if (item.size() != 3 || key.isEmpty() || key.length() > 192) throw new IllegalArgumentException();
+                    mergeObservation(history, key, new Observation(item.get(1).getAsLong(), item.get(2).getAsBoolean()));
+                } catch (RuntimeException exception) { malformed++; }
+            }
+            if (malformed != 0) LOGGER.warn("Ignored {} invalid Structure Finder discovery records", malformed);
+        } catch (IOException | RuntimeException exception) {
+            LOGGER.warn("Could not fully read Structure Finder discovery history {}; valid records remain available",
+                    historyFile.getFileName(), exception);
+        }
+        return history;
+    }
+
+    private void saveHistory(Map<String, Observation> history) throws IOException {
+        Files.createDirectories(historyFile.getParent());
+        Path temporary = Files.createTempFile(historyFile.getParent(), "discovery-", ".tmp");
+        try {
+            try (var writer = new BufferedWriter(new OutputStreamWriter(
+                    new GZIPOutputStream(Files.newOutputStream(temporary)), StandardCharsets.UTF_8))) {
+                writer.write("{\"format\":1}\n");
+                for (var state : history.entrySet()) {
+                    var item = new JsonArray();
+                    item.add(state.getKey());
+                    item.add(state.getValue().firstDetectedAt());
+                    item.add(state.getValue().dismissed());
+                    writer.write(GSON.toJson(item));
+                    writer.write('\n');
+                }
+            }
+            try {
+                Files.move(temporary, historyFile, StandardCopyOption.REPLACE_EXISTING, StandardCopyOption.ATOMIC_MOVE);
+            } catch (AtomicMoveNotSupportedException exception) {
+                Files.move(temporary, historyFile, StandardCopyOption.REPLACE_EXISTING);
+            }
+        } finally { Files.deleteIfExists(temporary); }
     }
 
     private static JsonObject encode(Entry entry) {

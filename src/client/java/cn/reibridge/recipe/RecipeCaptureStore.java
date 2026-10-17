@@ -1,20 +1,33 @@
 package cn.reibridge.recipe;
 
 import cn.reibridge.config.BridgeConfig;
-import io.netty.buffer.ByteBuf;
-import io.netty.buffer.Unpooled;
+import com.google.gson.JsonElement;
+import com.google.gson.JsonObject;
+import com.google.gson.JsonParser;
+import com.mojang.serialization.Codec;
+import com.mojang.serialization.JsonOps;
+import com.mojang.serialization.codecs.RecordCodecBuilder;
 import me.shedaniel.rei.api.client.registry.display.DisplayRegistry;
 import me.shedaniel.rei.api.client.registry.display.reason.DisplayAdditionReason;
 import net.fabricmc.loader.api.FabricLoader;
+import net.minecraft.SharedConstants;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.screens.recipebook.RecipeCollection;
 import net.minecraft.client.multiplayer.ClientPacketListener;
 import net.minecraft.client.multiplayer.ServerData;
-import net.minecraft.network.RegistryFriendlyByteBuf;
+import net.minecraft.core.RegistryAccess;
+import net.minecraft.core.Holder;
+import net.minecraft.core.HolderSet;
+import net.minecraft.core.registries.BuiltInRegistries;
 import net.minecraft.network.protocol.game.ClientboundRecipeBookAddPacket;
 import net.minecraft.network.protocol.game.ClientboundRecipeBookRemovePacket;
+import net.minecraft.resources.RegistryOps;
+import net.minecraft.world.item.crafting.Ingredient;
+import net.minecraft.world.item.crafting.RecipeBookCategory;
+import net.minecraft.world.item.crafting.display.RecipeDisplay;
 import net.minecraft.world.item.crafting.display.RecipeDisplayEntry;
 import net.minecraft.world.item.crafting.display.RecipeDisplayId;
+import net.minecraft.world.item.Item;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -26,7 +39,6 @@ import java.nio.file.Path;
 import java.nio.file.StandardCopyOption;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
-import java.util.ArrayList;
 import java.util.HexFormat;
 import java.util.HashMap;
 import java.util.LinkedHashMap;
@@ -34,6 +46,11 @@ import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.Objects;
+import java.util.Optional;
+import java.util.OptionalInt;
+import java.util.Comparator;
+import java.util.TreeMap;
+import java.util.UUID;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
@@ -41,6 +58,7 @@ import java.util.concurrent.TimeUnit;
 public final class RecipeCaptureStore {
     private static final Logger LOGGER = LoggerFactory.getLogger("REI Recipe Bridge");
     private static final int MAX_CACHE_BYTES = 64 * 1024 * 1024;
+    private static final int CACHE_FORMAT = 1;
     private static final long SAVE_DELAY_NANOS = TimeUnit.SECONDS.toNanos(1);
     private static final Path DIRECTORY = FabricLoader.getInstance().getConfigDir()
             .resolve("rei_recipe_bridge")
@@ -56,8 +74,8 @@ public final class RecipeCaptureStore {
     private static int lastReceivedCount;
     private static int lastMergedCount;
     private static int lastRegisteredCount;
-    private static boolean receivedPacket;
     private static boolean dirty;
+    private static boolean cacheNeedsBackup;
     private static long saveAfterNanos;
 
     private RecipeCaptureStore() {
@@ -71,40 +89,20 @@ public final class RecipeCaptureStore {
             return packet;
         }
 
-        boolean firstPacket = !receivedPacket;
-        receivedPacket = true;
         if (packet.replace()) {
             // A replace packet is a fresh index table for this connection.
-            // Keep stable cached entries, but never use indexes from an older
-            // packet when processing later remove messages.
+            // Keep its historical displays, without their obsolete server IDs.
             currentIndexes.clear();
+            entries.replaceAll((key, entry) -> historical(entry));
         }
         int cachedBefore = entries.size();
-        Map<Integer, String> incomingIndexes = new HashMap<>();
-        Map<String, ClientboundRecipeBookAddPacket.Entry> incomingEntries = new LinkedHashMap<>();
+        boolean changed = false;
+        RegistryAccess registries = connection.registryAccess();
         for (ClientboundRecipeBookAddPacket.Entry entry : packet.entries()) {
-            String key = stableKey(entry.contents());
-            incomingIndexes.put(entry.contents().id().index(), key);
-            incomingEntries.put(key, entry);
-            currentIndexes.put(entry.contents().id().index(), key);
-        }
-        // An index can be reused by a server after its recipe list changes.
-        // Drop an old entry occupying a current index when its contents differ;
-        // otherwise an old recipe could be injected under the new recipe's ID.
-        boolean changed = entries.entrySet().removeIf(entry -> {
-            String incomingKey = incomingIndexes.get(entry.getValue().contents().id().index());
-            return incomingKey != null && !incomingKey.equals(entry.getKey());
-        });
-        LinkedHashMap<String, ClientboundRecipeBookAddPacket.Entry> merged = new LinkedHashMap<>(entries);
-        for (Map.Entry<String, ClientboundRecipeBookAddPacket.Entry> incoming : incomingEntries.entrySet()) {
-            String key = incoming.getKey();
-            ClientboundRecipeBookAddPacket.Entry entry = incoming.getValue();
-            merged.put(key, entry);
-            ClientboundRecipeBookAddPacket.Entry cached = quiet(entry);
-            changed |= !Objects.equals(entries.put(key, cached), cached);
+            changed |= rememberCurrent(entry, registries);
         }
         lastReceivedCount = packet.entries().size();
-        lastMergedCount = merged.size();
+        lastMergedCount = packet.entries().size();
         if (changed) {
             markDirty();
         }
@@ -118,10 +116,10 @@ public final class RecipeCaptureStore {
                 packet.replace()
         );
 
-        if (!firstPacket && !packet.replace()) {
-            return packet;
-        }
-        return new ClientboundRecipeBookAddPacket(new ArrayList<>(merged.values()), packet.replace());
+        // RecipeDisplayId belongs to this server session. Historical displays
+        // are registered with REI separately; adding them to the vanilla book
+        // would make its placement button submit an unconfirmed/obsolete ID.
+        return packet;
     }
 
     public static synchronized void remove(
@@ -159,15 +157,10 @@ public final class RecipeCaptureStore {
         }
 
         boolean changed = false;
+        RegistryAccess registries = connection.registryAccess();
         for (RecipeCollection collection : minecraft.player.getRecipeBook().getCollections()) {
             for (RecipeDisplayEntry display : collection.getRecipes()) {
-                String key = stableKey(display);
-                ClientboundRecipeBookAddPacket.Entry previous = entries.put(
-                        key,
-                        new ClientboundRecipeBookAddPacket.Entry(display, false, false)
-                );
-                currentIndexes.put(display.id().index(), key);
-                changed |= previous == null || !previous.contents().equals(display);
+                changed |= rememberCurrent(new ClientboundRecipeBookAddPacket.Entry(display, false, false), registries);
             }
         }
         if (changed) {
@@ -188,13 +181,16 @@ public final class RecipeCaptureStore {
         if (connection == null || !load(connection)) {
             return;
         }
-        for (ClientboundRecipeBookAddPacket.Entry entry : entries.values()) {
+        for (Map.Entry<String, ClientboundRecipeBookAddPacket.Entry> cached : entries.entrySet()) {
+            String key = cached.getKey();
+            ClientboundRecipeBookAddPacket.Entry entry = cached.getValue();
             RecipeDisplayEntry contents = entry.contents();
-            registry.addWithReason(
-                    contents.display(),
-                    DisplayAdditionReason.RECIPE_MANAGER,
-                    DisplayAdditionReason.withId(contents.id())
-            );
+            if (key.equals(currentIndexes.get(contents.id().index()))) {
+                registry.addWithReason(contents.display(), DisplayAdditionReason.RECIPE_MANAGER,
+                        DisplayAdditionReason.withId(contents.id()));
+            } else {
+                registry.addWithReason(contents.display(), DisplayAdditionReason.RECIPE_MANAGER);
+            }
         }
         lastRegisteredCount = entries.size();
         LOGGER.info(
@@ -252,8 +248,8 @@ public final class RecipeCaptureStore {
         currentIndexes.clear();
         loadedConnection = null;
         loadedServer = null;
-        receivedPacket = false;
         dirty = false;
+        cacheNeedsBackup = false;
         lastReceivedCount = 0;
         lastMergedCount = 0;
         lastRegisteredCount = 0;
@@ -286,32 +282,28 @@ public final class RecipeCaptureStore {
         Path path = cachePath(server);
         byte[] snapshot = WRITER.latest(path);
         if (snapshot == null && !Files.isRegularFile(path)) {
+            if (Files.isRegularFile(legacyCachePath(server))) {
+                LOGGER.info("Leaving legacy network recipe cache untouched for {}; recapturing named displays", server);
+            }
             return true;
         }
 
         try {
+            RegistryAccess registries = connection.registryAccess();
             long size = snapshot == null ? Files.size(path) : snapshot.length;
             if (size <= 0 || size > MAX_CACHE_BYTES) {
                 throw new IOException("invalid cache size: " + size);
             }
-            ByteBuf bytes = Unpooled.wrappedBuffer(snapshot == null ? Files.readAllBytes(path) : snapshot);
-            try {
-                RegistryFriendlyByteBuf buffer = new RegistryFriendlyByteBuf(bytes, connection.registryAccess());
-                ClientboundRecipeBookAddPacket packet = ClientboundRecipeBookAddPacket.STREAM_CODEC.decode(buffer);
-                for (ClientboundRecipeBookAddPacket.Entry entry : packet.entries()) {
-                    entries.put(stableKey(entry.contents()), quiet(entry));
-                }
-                LOGGER.info(
-                        "Loaded {} cached recipe displays for {}",
-                        entries.size(),
-                        loadedServer
-                );
-            } finally {
-                bytes.release();
+            for (CachedRecipe recipe : decodeSnapshot(snapshot == null ? Files.readAllBytes(path) : snapshot,
+                    registries)) {
+                ClientboundRecipeBookAddPacket.Entry entry = recipe.historicalEntry();
+                entries.put(stableKey(entry.contents(), registries), entry);
             }
+            LOGGER.info("Loaded {} cached recipe displays for {}", entries.size(), loadedServer);
         } catch (IOException | RuntimeException exception) {
             entries.clear();
-            System.err.println("[REI Recipe Bridge] Failed to load captured recipes: " + exception.getMessage());
+            cacheNeedsBackup = true;
+            LOGGER.warn("Failed to load captured recipes from {}; preserving the original before any replacement", path, exception);
         }
         return true;
     }
@@ -324,43 +316,173 @@ public final class RecipeCaptureStore {
             throw new IllegalStateException("Recipe cache encoding must run on the client thread");
         }
         Path path = cachePath(loadedServer);
-        ByteBuf bytes = Unpooled.buffer();
         try {
-            RegistryFriendlyByteBuf buffer = new RegistryFriendlyByteBuf(bytes, loadedConnection.registryAccess());
-            ClientboundRecipeBookAddPacket packet = new ClientboundRecipeBookAddPacket(
-                    List.copyOf(entries.values()),
-                    false
-            );
-            ClientboundRecipeBookAddPacket.STREAM_CODEC.encode(buffer, packet);
-            if (buffer.readableBytes() > MAX_CACHE_BYTES) {
+            byte[] encoded = encodeSnapshot(entries.values().stream().map(CachedRecipe::of).toList(),
+                    loadedConnection.registryAccess());
+            if (encoded.length > MAX_CACHE_BYTES) {
                 throw new IllegalStateException("recipe cache exceeds maximum size");
             }
-            byte[] encoded = new byte[buffer.readableBytes()];
-            buffer.getBytes(buffer.readerIndex(), encoded);
+            if (cacheNeedsBackup && Files.isRegularFile(path)) {
+                Path backup = path.resolveSibling(path.getFileName() + ".rejected-" + UUID.randomUUID());
+                Files.copy(path, backup);
+                cacheNeedsBackup = false;
+                LOGGER.warn("Preserved unreadable recipe cache at {}", backup);
+            }
             WRITER.submit(path, encoded);
             dirty = false;
-        } catch (RuntimeException exception) {
+        } catch (IOException | RuntimeException exception) {
             saveAfterNanos = System.nanoTime() + SAVE_DELAY_NANOS;
             LOGGER.warn("Failed to encode captured recipes", exception);
-        } finally {
-            bytes.release();
         }
+    }
+
+    private static byte[] encodeSnapshot(List<CachedRecipe> recipes, RegistryAccess registries) {
+        JsonObject root = new JsonObject();
+        root.addProperty("format", CACHE_FORMAT);
+        root.addProperty("minecraft", SharedConstants.getCurrentVersion().id());
+        root.add("recipes", CachedRecipe.CODEC.listOf()
+                .encodeStart(RegistryOps.create(JsonOps.INSTANCE, registries), recipes).getOrThrow());
+        return root.toString().getBytes(StandardCharsets.UTF_8);
+    }
+
+    private static List<CachedRecipe> decodeSnapshot(byte[] snapshot, RegistryAccess registries) {
+        JsonObject root = JsonParser.parseString(new String(snapshot, StandardCharsets.UTF_8)).getAsJsonObject();
+        if (root.get("format").getAsInt() != CACHE_FORMAT
+                || !SharedConstants.getCurrentVersion().id().equals(root.get("minecraft").getAsString())) {
+            throw new IllegalArgumentException("unsupported recipe cache format or Minecraft version");
+        }
+        return CachedRecipe.CODEC.listOf().parse(RegistryOps.create(JsonOps.INSTANCE, registries),
+                root.get("recipes")).getOrThrow();
+    }
+
+    /** Disk data has named registry references and no session-local recipe or group IDs. */
+    private record CachedRecipe(RecipeDisplay display, RecipeBookCategory category,
+                                Optional<List<Ingredient>> requirements) {
+        private static final Codec<CachedRecipe> CODEC = RecordCodecBuilder.create(instance -> instance.group(
+                RecipeDisplay.CODEC.fieldOf("display").forGetter(CachedRecipe::display),
+                BuiltInRegistries.RECIPE_BOOK_CATEGORY.byNameCodec().fieldOf("category").forGetter(CachedRecipe::category),
+                Ingredient.CODEC.listOf().optionalFieldOf("requirements").forGetter(CachedRecipe::requirements)
+        ).apply(instance, CachedRecipe::new));
+
+        static CachedRecipe of(ClientboundRecipeBookAddPacket.Entry entry) {
+            return of(entry.contents());
+        }
+
+        static CachedRecipe of(RecipeDisplayEntry contents) {
+            return new CachedRecipe(contents.display(), contents.category(), contents.craftingRequirements());
+        }
+
+        ClientboundRecipeBookAddPacket.Entry historicalEntry() {
+            return new ClientboundRecipeBookAddPacket.Entry(new RecipeDisplayEntry(new RecipeDisplayId(-1), display,
+                    OptionalInt.empty(), category, requirements), false, false);
+        }
+    }
+
+    private static ClientboundRecipeBookAddPacket.Entry historical(ClientboundRecipeBookAddPacket.Entry entry) {
+        return CachedRecipe.of(entry).historicalEntry();
     }
 
     private static ClientboundRecipeBookAddPacket.Entry quiet(ClientboundRecipeBookAddPacket.Entry entry) {
         return new ClientboundRecipeBookAddPacket.Entry(entry.contents(), false, false);
     }
 
-    private static String stableKey(RecipeDisplayEntry entry) {
-        // RecipeDisplay implementations and their slot displays are records in
-        // the 26.2 protocol, so their value-based toString output excludes the
-        // unstable display index while retaining ingredients, result and the
-        // crafting requirements that distinguish recipe variants.
-        return entry.display().getClass().getName()
-                + "|display=" + entry.display()
-                + "|group=" + entry.group()
-                + "|category=" + entry.category()
-                + "|requirements=" + entry.craftingRequirements();
+    /** Bind only a live entry to a server ID; displaced entries remain display-only history. */
+    private static boolean rememberCurrent(ClientboundRecipeBookAddPacket.Entry entry, RegistryAccess registries) {
+        String key = stableKey(entry.contents(), registries);
+        ClientboundRecipeBookAddPacket.Entry previousEntry = entries.get(key);
+        int index = entry.contents().id().index();
+        if (previousEntry != null && previousEntry.contents().id().index() != index) {
+            currentIndexes.remove(previousEntry.contents().id().index(), key);
+        }
+        String previous = currentIndexes.put(index, key);
+        if (previous != null && !previous.equals(key)) {
+            entries.computeIfPresent(previous, (unused, old) -> historical(old));
+        }
+        ClientboundRecipeBookAddPacket.Entry cached = quiet(entry);
+        entries.put(key, cached);
+        return previousEntry == null || !Objects.equals(CachedRecipe.of(previousEntry), CachedRecipe.of(cached));
+    }
+
+    /**
+     * RecipeDisplayId and group are session-local and must not identify a cached
+     * recipe. Encode the actual display, category, requirements and all nested
+     * item component data through the same named-registry codec used on disk,
+     * then hash canonical JSON. Object keys are sorted, while arrays retain
+     * their protocol order (slot order and requirement order are meaningful).
+     */
+    private static String stableKey(RecipeDisplayEntry entry, RegistryAccess registries) {
+        JsonElement encoded = CachedRecipe.CODEC
+                .encodeStart(RegistryOps.create(JsonOps.INSTANCE, registries), keyRecipe(entry))
+                .getOrThrow();
+        String canonical = canonicalJson(encoded);
+        try {
+            byte[] digest = MessageDigest.getInstance("SHA-256")
+                    .digest(canonical.getBytes(StandardCharsets.UTF_8));
+            return "v2:" + HexFormat.of().formatHex(digest);
+        } catch (NoSuchAlgorithmException exception) {
+            throw new IllegalStateException("SHA-256 is unavailable", exception);
+        }
+    }
+
+    private static CachedRecipe keyRecipe(RecipeDisplayEntry entry) {
+        CachedRecipe recipe = CachedRecipe.of(entry);
+        return new CachedRecipe(recipe.display(), recipe.category(),
+                recipe.requirements().map(RecipeCaptureStore::normalizeIngredients));
+    }
+
+    /** Ingredient candidates are a set; normalize their named holders before encoding. */
+    private static List<Ingredient> normalizeIngredients(List<Ingredient> ingredients) {
+        return ingredients.stream().map(RecipeCaptureStore::normalizeIngredient).toList();
+    }
+
+    private static Ingredient normalizeIngredient(Ingredient ingredient) {
+        if (ingredient.isEmpty()) {
+            return ingredient;
+        }
+        List<Holder<Item>> holders = ingredient.items()
+                .sorted(Comparator.comparing(RecipeCaptureStore::holderName))
+                .toList();
+        return Ingredient.of(HolderSet.direct(holders));
+    }
+
+    private static String holderName(Holder<Item> holder) {
+        return holder.unwrapKey().map(key -> key.identifier().toString()).orElse("");
+    }
+
+    private static String canonicalJson(JsonElement element) {
+        StringBuilder output = new StringBuilder();
+        appendCanonicalJson(element, output);
+        return output.toString();
+    }
+
+    private static void appendCanonicalJson(JsonElement element, StringBuilder output) {
+        if (element.isJsonObject()) {
+            output.append('{');
+            boolean first = true;
+            for (Map.Entry<String, JsonElement> entry : new TreeMap<>(element.getAsJsonObject().asMap()).entrySet()) {
+                if (!first) {
+                    output.append(',');
+                }
+                first = false;
+                output.append(new com.google.gson.JsonPrimitive(entry.getKey()));
+                output.append(':');
+                appendCanonicalJson(entry.getValue(), output);
+            }
+            output.append('}');
+        } else if (element.isJsonArray()) {
+            output.append('[');
+            boolean first = true;
+            for (JsonElement child : element.getAsJsonArray()) {
+                if (!first) {
+                    output.append(',');
+                }
+                first = false;
+                appendCanonicalJson(child, output);
+            }
+            output.append(']');
+        } else {
+            output.append(element);
+        }
     }
 
     private static String currentServer(ClientPacketListener connection) {
@@ -372,9 +494,19 @@ public final class RecipeCaptureStore {
     }
 
     private static Path cachePath(String server) {
+        return DIRECTORY.resolve(serverHash(server) + ".v1.json");
+    }
+
+    private static Path legacyCachePath(String server) {
+        // Pre-v1 files contain network IDs with no recoverable registry table.
+        // They cannot be migrated safely and are kept as the user's originals.
+        return DIRECTORY.resolve(serverHash(server) + ".bin");
+    }
+
+    private static String serverHash(String server) {
         try {
             byte[] digest = MessageDigest.getInstance("SHA-256").digest(server.getBytes(StandardCharsets.UTF_8));
-            return DIRECTORY.resolve(HexFormat.of().formatHex(digest, 0, 16) + ".bin");
+            return HexFormat.of().formatHex(digest, 0, 16);
         } catch (NoSuchAlgorithmException exception) {
             throw new IllegalStateException("SHA-256 is unavailable", exception);
         }

@@ -19,7 +19,9 @@ import java.util.UUID;
  * Recovers from servers or proxies which send a waypoint UPDATE without a matching TRACK.
  * Vanilla dereferences the missing map entry and disconnects the client because the packet
  * is non-skippable. An UPDATE carries a complete TrackedWaypoint, so inserting it as the
- * initial value preserves the locator bar while restoring protocol state.
+ * initial value preserves the locator bar while restoring protocol state. A complete UPDATE
+ * also recovers a missing TRACK when its position representation changed; vanilla's update
+ * methods cannot apply a different representation to an existing waypoint.
  */
 @Mixin(ClientWaypointManager.class)
 abstract class ClientWaypointManagerFixMixin {
@@ -44,6 +46,13 @@ abstract class ClientWaypointManagerFixMixin {
         if (existing == null) {
             SPARK_FIX_LOGGER.warn(
                 "Recovered an orphan waypoint UPDATE for {} by treating it as TRACK; connection kept alive.",
+                id
+            );
+            callbackInfo.cancel();
+        } else if (existing.getClass() != waypoint.getClass()) {
+            this.waypoints.put(id, waypoint);
+            SPARK_FIX_LOGGER.warn(
+                "Recovered a waypoint UPDATE with a changed position type for {} by treating it as TRACK.",
                 id
             );
             callbackInfo.cancel();
