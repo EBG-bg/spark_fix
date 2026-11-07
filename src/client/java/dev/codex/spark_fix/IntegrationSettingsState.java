@@ -1,6 +1,10 @@
 package dev.codex.spark_fix;
 
 import net.fabricmc.loader.api.FabricLoader;
+import net.minecraft.network.chat.Component;
+
+import java.util.ArrayList;
+import java.util.List;
 
 /**
  * Draft and startup state shared by the vanilla and optional owo settings screens.
@@ -14,6 +18,7 @@ final class IntegrationSettingsState {
     private boolean structureFinder;
     private ReiInlineSettings reiSettings;
     private boolean reiSettingsLoaded;
+    private List<Component> saveFailures = List.of();
 
     IntegrationSettingsState() {
         this.adofaigo = SparkFixConfig.adofaigoEnabled();
@@ -95,11 +100,19 @@ final class IntegrationSettingsState {
         return reiSettings;
     }
 
-    void save() {
+    boolean trySave() {
         SparkFixConfig.setAdofoigoEnabled(this.adofaigo);
         SparkFixConfig.setReiRecipeBridgeEnabled(this.reiRecipeBridge);
         SparkFixConfig.setLitematicaEnabled(this.litematica);
         SparkFixConfig.setStructureFinderEnabled(this.structureFinder);
-        SparkFixConfig.save();
+        List<Component> failed = new ArrayList<>();
+        if (!SparkFixConfig.trySave()) failed.add(Component.translatable("config.spark_fix.title"));
+        if (reiSettings != null && reiSettings.saveFailed() && !reiSettings.trySave()) {
+            failed.add(Component.literal("REI Recipe Bridge"));
+        }
+        saveFailures = List.copyOf(failed);
+        return failed.isEmpty();
     }
+
+    List<Component> saveFailures() { return saveFailures; }
 }

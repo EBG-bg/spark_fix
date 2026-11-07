@@ -2,9 +2,11 @@ package dev.codex.spark_fix;
 
 import net.minecraft.client.gui.Font;
 import net.minecraft.client.gui.GuiGraphicsExtractor;
+import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.components.AbstractSliderButton;
 import net.minecraft.client.gui.components.AbstractWidget;
 import net.minecraft.client.gui.components.EditBox;
+import net.minecraft.client.gui.components.toasts.SystemToast;
 import net.minecraft.client.gui.narration.NarrationElementOutput;
 import net.minecraft.client.input.CharacterEvent;
 import net.minecraft.client.input.KeyEvent;
@@ -15,6 +17,7 @@ import org.lwjgl.glfw.GLFW;
 
 /** Numeric editing with MaLiLib's own bounds and slider/text preference. */
 final class LitematicaNumericWidget extends AbstractWidget {
+    private static final SystemToast.SystemToastId INVALID_INPUT_TOAST = new SystemToast.SystemToastId();
     private final Font font;
     private final Object option;
     private final boolean integer;
@@ -24,6 +27,9 @@ final class LitematicaNumericWidget extends AbstractWidget {
     private final ValueSlider slider;
     private final SettingsIconButton toggle;
     private AbstractWidget focused;
+    private boolean syncing;
+    private boolean draftDirty;
+    private Component feedback;
 
     LitematicaNumericWidget(Font font, Object option, String name, int width) {
         super(0, 0, width, heightFor(width), Component.literal(name));
@@ -39,9 +45,9 @@ final class LitematicaNumericWidget extends AbstractWidget {
         slider = new ValueSlider();
         toggle = new SettingsIconButton(0, 0, 18, SettingsIconButton.Icon.MODE,
                 Component.translatable("config.spark_fix.litematica_numeric_mode"), () -> {
+                    if (!LitematicaConfigDiscovery.usesSlider(option)) commitDraft();
                     LitematicaConfigDiscovery.toggleSlider(option);
-                    input.setValue(LitematicaConfigDiscovery.value(option));
-                    slider.sync();
+                    syncFromOption();
                     focus(body());
                 }, true) {
             // The containing screen draws this at screen coordinates after its scissor is removed.
@@ -66,32 +72,72 @@ final class LitematicaNumericWidget extends AbstractWidget {
     private AbstractWidget body() { return LitematicaConfigDiscovery.usesSlider(option) ? slider : input; }
 
     Component hoverText(double x, double y) {
-        return toggle.isMouseOver(x, y) ? toggle.getMessage() : null;
+        if (toggle.isMouseOver(x, y)) return toggle.getMessage();
+        return feedback == null ? rangeHint() : feedback.copy().append("\n").append(rangeHint());
     }
+
+    private Component rangeHint() {
+        return Component.translatable(integer ? "config.spark_fix.litematica_numeric_range_integer"
+                : "config.spark_fix.litematica_numeric_range_decimal", bound(minimum), bound(maximum));
+    }
+
+    private String bound(double value) { return integer ? Long.toString((long) value) : Double.toString(value); }
 
     private double current() {
         return LitematicaConfigDiscovery.number(option, integer ? "getIntegerValue" : "getDoubleValue");
     }
 
     private void edit(String text) {
+        if (syncing) return;
+        draftDirty = true;
+        feedback = null;
+        input.setTextColor(parseDraft(text) == null ? 0xFFFF7272 : 0xFFE0E0E0);
+    }
+
+    private Double parseDraft(String text) {
         try {
-            double number = integer ? Integer.parseInt(text) : Double.parseDouble(text);
+            String value = text.strip();
+            double number = integer ? Integer.parseInt(value) : Double.parseDouble(value);
             if (!Double.isFinite(number) || number < minimum || number > maximum) throw new NumberFormatException();
-            LitematicaConfigDiscovery.setNumber(option, number, integer);
-            input.setTextColor(0xFFE0E0E0);
-            if (slider != null) slider.sync();
+            return number;
         } catch (NumberFormatException ignored) {
-            input.setTextColor(0xFFFF7272);
+            return null;
+        }
+    }
+
+    /** Native text stays a draft until Enter, blur or switching to the slider. */
+    private void commitDraft() {
+        if (!draftDirty) return;
+        String draft = input.getValue();
+        Double value = parseDraft(draft);
+        if (value != null) LitematicaConfigDiscovery.setNumber(option, value, integer);
+        String actual = LitematicaConfigDiscovery.value(option);
+        syncFromOption();
+        if (value == null) {
+            feedback = Component.translatable("config.spark_fix.litematica_numeric_rejected", draft, actual);
+        } else if (Double.compare(current(), value) != 0) {
+            feedback = Component.translatable("config.spark_fix.litematica_numeric_adjusted", actual);
+        }
+        if (feedback != null) {
+            input.setTextColor(0xFFFFD782);
+            Minecraft client = Minecraft.getInstance();
+            if (client != null && client.gui != null && client.gui.toastManager() != null) {
+                SystemToast.addOrUpdate(client.gui.toastManager(), INVALID_INPUT_TOAST,
+                        Component.translatable("config.spark_fix.litematica_numeric_not_applied", getMessage()),
+                        feedback.copy().append("\n").append(rangeHint()));
+            }
         }
     }
 
     private void focus(AbstractWidget widget) {
+        if (focused == input && widget != input) commitDraft();
         if (focused != null) focused.setFocused(false);
         focused = widget;
         focused.setFocused(isFocused());
     }
 
     @Override public void setFocused(boolean focused) {
+        if (!focused) commitDraft();
         super.setFocused(focused);
         if (this.focused == null) this.focused = body();
         this.focused.setFocused(focused);
@@ -100,7 +146,11 @@ final class LitematicaNumericWidget extends AbstractWidget {
 
     private void syncFromOption() {
         String current = LitematicaConfigDiscovery.value(option);
-        if (!input.getValue().equals(current)) input.setValue(current);
+        syncing = true;
+        try { if (!input.getValue().equals(current)) input.setValue(current); }
+        finally { syncing = false; }
+        draftDirty = false;
+        input.setTextColor(0xFFE0E0E0);
         slider.sync();
     }
 
@@ -122,6 +172,10 @@ final class LitematicaNumericWidget extends AbstractWidget {
     @Override public boolean mouseDragged(MouseButtonEvent event, double dx, double dy) { return body().mouseDragged(event, dx, dy); }
     @Override public boolean mouseReleased(MouseButtonEvent event) { return body().mouseReleased(event); }
     @Override public boolean keyPressed(KeyEvent event) {
+        if (focused == input && (event.key() == GLFW.GLFW_KEY_ENTER || event.key() == GLFW.GLFW_KEY_KP_ENTER)) {
+            commitDraft();
+            return true;
+        }
         if (event.key() == GLFW.GLFW_KEY_TAB) {
             if (event.hasShiftDown() ? focused != toggle : focused == toggle) return false;
             focus(focused == toggle ? body() : toggle);
@@ -161,7 +215,8 @@ final class LitematicaNumericWidget extends AbstractWidget {
             double next = minimum * (1 - value) + maximum * value;
             if (integer) next = Math.round(next);
             LitematicaConfigDiscovery.setNumber(option, Math.clamp(next, minimum, maximum), integer);
-            input.setValue(LitematicaConfigDiscovery.value(option));
+            feedback = null;
+            syncFromOption();
         }
         @Override public boolean keyPressed(KeyEvent event) {
             if (event.key() == GLFW.GLFW_KEY_LEFT || event.key() == GLFW.GLFW_KEY_RIGHT) {

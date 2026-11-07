@@ -248,12 +248,17 @@ final class LitematicaConfigDiscovery {
         }
     }
 
-    static void save(List<DiscoveredGroup> groups) {
+    static void save(List<DiscoveredGroup> groups) { trySave(groups); }
+
+    static List<String> trySave(List<DiscoveredGroup> groups) {
+        List<String> failed = new ArrayList<>();
         for (DiscoveredGroup group : groups) {
             if (!invokeNoArg(group.handler(), "save")) {
                 SparkFixClient.LOGGER.warn("Could not save MaLiLib configuration handler {}", group.id());
+                failed.add(group.id());
             }
         }
+        return List.copyOf(failed);
     }
 
     static String name(Object option) {

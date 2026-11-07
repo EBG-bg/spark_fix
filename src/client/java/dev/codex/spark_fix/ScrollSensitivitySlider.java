@@ -57,7 +57,7 @@ final class ScrollSensitivitySlider extends AbstractSliderButton {
         if (scope == Scope.LITEMATICA) SparkFixConfig.setLitematicaScrollSensitivity(next);
         else {
             SparkFixConfig.setScrollSensitivity(next);
-            SparkFixConfig.save();
+            SettingsSaveFeedback.saveNow();
         }
     }
 

@@ -167,7 +167,7 @@ final class OwoIntegrationSettingsScreen extends BaseOwoScreen<FlowLayout> {
                         0xFFFFFF55));
             } else {
                 var open = new FocusableWidgetComponent(new ProjectionButton(0, 0, panelWidth - 48,
-                        () -> minecraft.setScreenAndShow(IntegrationSettingsRouter.createLitematica(this))));
+                        () -> saveThen(() -> minecraft.setScreenAndShow(IntegrationSettingsRouter.createLitematica(this)))));
                 open.horizontalSizing(Sizing.fill());
                 details.child(open);
             }
@@ -187,7 +187,7 @@ final class OwoIntegrationSettingsScreen extends BaseOwoScreen<FlowLayout> {
                 details.child(label(Component.translatable("config.spark_fix.restart_required"), 0xFFFFFF55));
             } else {
                 ActionComponent open = action(Component.translatable("gui.spark_fix.structure_finder.open"),
-                        () -> minecraft.setScreenAndShow(new StructureFinderScreen(this)), panelWidth - 48, 24);
+                        () -> saveThen(() -> minecraft.setScreenAndShow(new StructureFinderScreen(this))), panelWidth - 48, 24);
                 open.horizontalSizing(Sizing.fill());
                 details.child(open);
             }
@@ -337,6 +337,15 @@ final class OwoIntegrationSettingsScreen extends BaseOwoScreen<FlowLayout> {
         });
     }
 
+    @Override
+    public void tick() {
+        super.tick();
+        if (reiExpanded && state.reiRecipeBridge() && state.reiInstalled()) {
+            ReiInlineSettings settings = state.reiSettings();
+            if (settings != null && settings.pollInformation()) queueRebuild();
+        }
+    }
+
     private void rebuild() {
         double offset = scroll == null ? 0 : scroll.offset();
         this.uiAdapter.rootComponent.clearChildren();
@@ -362,6 +371,12 @@ final class OwoIntegrationSettingsScreen extends BaseOwoScreen<FlowLayout> {
         for (ReiInlineSettings.Line line : settings.information()) {
             details.child(label(line.text(), line.color()));
         }
+        if (settings.saveFailed()) {
+            addReiButton(details, Component.translatable("config.spark_fix.litematica_save_retry"), () -> {
+                settings.trySave();
+                queueRebuild();
+            });
+        }
         ActionComponent refresh = addReiButton(details, Component.translatable("rei_recipe_bridge.refresh"), () -> {
             settings.refresh();
             queueRebuild();
@@ -370,6 +385,8 @@ final class OwoIntegrationSettingsScreen extends BaseOwoScreen<FlowLayout> {
         refresh.cursorStyle(refresh.enabled ? CursorStyle.HAND : CursorStyle.POINTER);
         refresh.tooltip(Component.translatable(settings.canRefresh()
                 ? "config.spark_fix.rei_refresh_help" : "config.spark_fix.rei_refresh_no_world"));
+        addReiButton(details, Component.translatable("rei_recipe_bridge.cache_maintenance.open"),
+                () -> saveThen(() -> minecraft.setScreenAndShow(settings.cacheScreen(this))));
     }
 
     private void addReiToggle(FlowLayout details, String key, boolean value, Runnable callback) {
@@ -393,8 +410,12 @@ final class OwoIntegrationSettingsScreen extends BaseOwoScreen<FlowLayout> {
     }
 
     private void saveAndClose() {
-        state.save();
-        this.minecraft.setScreenAndShow(parent);
+        saveThen(() -> this.minecraft.setScreenAndShow(parent));
+    }
+
+    private void saveThen(Runnable next) {
+        if (state.trySave()) next.run();
+        else SettingsSaveFeedback.showFailure(this, state.saveFailures(), () -> saveThen(next));
     }
 
     @Override

@@ -190,7 +190,18 @@ public final class SparkFixConfig {
         captureStartupValues();
     }
 
-    public static synchronized void save() {
+    public static synchronized void save() { trySave(); }
+
+    public static synchronized boolean trySave() {
+        try {
+            return saveToDisk();
+        } catch (RuntimeException exception) {
+            LOGGER.warn("Could not encode spark_fix configuration.", exception);
+            return false;
+        }
+    }
+
+    private static boolean saveToDisk() {
         load();
 
         Properties properties = new Properties();
@@ -233,8 +244,10 @@ public final class SparkFixConfig {
             } catch (AtomicMoveNotSupportedException exception) {
                 Files.move(temporary, file, StandardCopyOption.REPLACE_EXISTING);
             }
+            return true;
         } catch (IOException | RuntimeException exception) {
             LOGGER.warn("Could not save spark_fix configuration.", exception);
+            return false;
         } finally {
             if (temporary != null) {
                 try {

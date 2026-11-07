@@ -45,6 +45,7 @@ public final class SparkFixClient implements ClientModInitializer {
             SteamLauncher.cancelPendingLaunch();
             cleanupAll();
         });
+        PatchHooks.runtimeReady("tabtps_exit");
     }
 
     private static void cleanupAll() {

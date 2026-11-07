@@ -59,10 +59,15 @@ final class LitematicaRenderLayerSettings {
         return List.copyOf(result);
     }
 
-    void save() {
-        if (!dirty) return;
-        try { saveAction.run(); dirty = false; }
-        catch (RuntimeException exception) { SparkFixClient.LOGGER.warn("Could not save render layer changes", exception); }
+    void save() { trySave(); }
+
+    boolean trySave() {
+        if (!dirty) return true;
+        try { saveAction.run(); dirty = false; return true; }
+        catch (RuntimeException exception) {
+            SparkFixClient.LOGGER.warn("Could not save render layer changes", exception);
+            return false;
+        }
     }
 
     private Object call(String name, Object... arguments) {

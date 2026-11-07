@@ -116,6 +116,15 @@ public final class StructureFinderCatalog {
         }
     }
 
+    /** Retry only a finished failed/empty load; never duplicate a running loader. */
+    static synchronized CompletableFuture<List<Pattern>> retryFailedPatterns(CompletableFuture<List<Pattern>> failed) {
+        if (patterns == failed && failed != null && failed.isDone()
+                && (failed.isCompletedExceptionally() || failed.isCancelled() || failed.join().isEmpty())) {
+            patterns = null;
+        }
+        return patternsFuture();
+    }
+
     public record Entry(String id, String zhName, String enName, String dimension) {
         public Component name() {
             return Component.translatableWithFallback("structure_finder.structure." + id, enName);

@@ -53,26 +53,8 @@ final class LitematicaCustomAliases {
         // Older versions have no ownership snapshot. Missing JSON must not revive cached personal words.
         else savedAliases.putAll(personalAliases(aliases));
         if (refreshDeletedFile(aliases)) return;
-        try (var reader = Files.newBufferedReader(file, StandardCharsets.UTF_8)) {
-            var object = JsonParser.parseReader(reader).getAsJsonObject();
-            var available = SparkFixConfig.availableOptionKeys(discoveredKeys);
-            for (Map.Entry<String, JsonElement> entry : object.entrySet()) {
-                if (!entry.getValue().isJsonArray()) throw new IllegalArgumentException("Expected an alias array");
-                List<String> entries = new ArrayList<>();
-                for (JsonElement value : entry.getValue().getAsJsonArray()) {
-                    if (!value.isJsonPrimitive() || !value.getAsJsonPrimitive().isString()) {
-                        throw new IllegalArgumentException("Expected an alias string");
-                    }
-                    entries.add(value.getAsString());
-                }
-                String resolved = available.resolve(entry.getKey());
-                String key = resolved == null ? entry.getKey() : resolved;
-                List<String> cleaned = clean(key, entries, List.of());
-                if (!cleaned.isEmpty()) {
-                    if (key.equals(entry.getKey())) values.put(key, cleaned);
-                    else values.putIfAbsent(key, cleaned);
-                }
-            }
+        try {
+            values.putAll(readOriginal());
             savedAliases.clear();
             savedAliases.putAll(values);
             for (String key : discoveredKeys) {
@@ -149,9 +131,11 @@ final class LitematicaCustomAliases {
         });
     }
 
-    void save(Map<String, List<String>> aliases, Map<String, List<String>> mainNames) {
+    void save(Map<String, List<String>> aliases, Map<String, List<String>> mainNames) { trySave(aliases, mainNames); }
+
+    boolean trySave(Map<String, List<String>> aliases, Map<String, List<String>> mainNames) {
         refreshDeletedFile(aliases);
-        if (!writable) return;
+        if (!writable && !retryReadOriginal()) return false;
         // Retain entries for temporarily unavailable mods, but export only personal words for loaded options.
         for (String key : discoveredKeys) {
             Set<String> packaged = names(presetAliases.getOrDefault(key, List.of()));
@@ -178,8 +162,10 @@ final class LitematicaCustomAliases {
             savedAliases.putAll(values);
             newAliases.clear();
             deletionHandled = false;
+            return true;
         } catch (IOException | RuntimeException exception) {
             SparkFixClient.LOGGER.warn("Could not save custom Litematica aliases", exception);
+            return false;
         } finally {
             if (temporary != null) {
                 try {
@@ -189,6 +175,49 @@ final class LitematicaCustomAliases {
                 }
             }
         }
+    }
+
+    /** Unlock Retry only after the whole repaired original is readable and valid. */
+    private boolean retryReadOriginal() {
+        Map<String, List<String>> repaired;
+        try {
+            repaired = readOriginal();
+        } catch (IOException | RuntimeException exception) {
+            SparkFixClient.LOGGER.warn("Custom Litematica aliases are still unreadable; preserving the original", exception);
+            return false;
+        }
+        // Existing editor values remain authoritative for loaded options. Keep
+        // repaired records for missing mods, which the editor cannot display.
+        values.clear();
+        values.putAll(repaired);
+        writable = true;
+        return true;
+    }
+
+    private Map<String, List<String>> readOriginal() throws IOException {
+        Map<String, List<String>> result = new LinkedHashMap<>();
+        try (var reader = Files.newBufferedReader(file, StandardCharsets.UTF_8)) {
+            var object = JsonParser.parseReader(reader).getAsJsonObject();
+            var available = SparkFixConfig.availableOptionKeys(discoveredKeys);
+            for (Map.Entry<String, JsonElement> entry : object.entrySet()) {
+                if (!entry.getValue().isJsonArray()) throw new IllegalArgumentException("Expected an alias array");
+                List<String> entries = new ArrayList<>();
+                for (JsonElement value : entry.getValue().getAsJsonArray()) {
+                    if (!value.isJsonPrimitive() || !value.getAsJsonPrimitive().isString()) {
+                        throw new IllegalArgumentException("Expected an alias string");
+                    }
+                    entries.add(value.getAsString());
+                }
+                String resolved = available.resolve(entry.getKey());
+                String key = resolved == null ? entry.getKey() : resolved;
+                List<String> cleaned = clean(key, entries, List.of());
+                if (!cleaned.isEmpty()) {
+                    if (key.equals(entry.getKey())) result.put(key, cleaned);
+                    else result.putIfAbsent(key, cleaned);
+                }
+            }
+        }
+        return result;
     }
 
     private static List<String> clean(String key, List<String> aliases, List<String> mainNames) {

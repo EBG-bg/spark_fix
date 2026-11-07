@@ -200,7 +200,7 @@ class VanillaIntegrationSettingsScreen extends Screen {
                     panelWidth - 48, 0xFFFFFF55) + 10;
         } else {
             AbstractWidget open = projectionButton(left + 24, y + h, panelWidth - 48,
-                    () -> minecraft.setScreenAndShow(IntegrationSettingsRouter.createLitematica(this)));
+                    () -> saveThen(() -> minecraft.setScreenAndShow(IntegrationSettingsRouter.createLitematica(this))));
             h += open.getHeight() + 10;
         }
         cards.add(new Card(y, h, IntegrationSettingsStyle.SETTINGS_PANEL, null, null, null, null, 0, false));
@@ -215,7 +215,7 @@ class VanillaIntegrationSettingsScreen extends Screen {
         } else {
             Button open = button(Component.translatable("gui.spark_fix.structure_finder.open"),
                     left + 24, y + h, panelWidth - 48,
-                    () -> minecraft.setScreenAndShow(new StructureFinderScreen(this)));
+                    () -> saveThen(() -> minecraft.setScreenAndShow(new StructureFinderScreen(this))));
             h += open.getHeight() + 10;
         }
         cards.add(new Card(y, h, IntegrationSettingsStyle.SETTINGS_PANEL, null, null, null, null, 0, false));
@@ -244,6 +244,10 @@ class VanillaIntegrationSettingsScreen extends Screen {
     @Override
     public void tick() {
         super.tick();
+        if (reiExpanded && state.reiRecipeBridge() && state.reiInstalled()) {
+            ReiInlineSettings settings = state.reiSettings();
+            if (settings != null && settings.pollInformation()) rebuildRequested = true;
+        }
         if (!rebuildRequested) return;
         rebuildRequested = false;
         init();
@@ -271,6 +275,13 @@ class VanillaIntegrationSettingsScreen extends Screen {
         for (ReiInlineSettings.Line line : settings.information()) {
             y += text(line.text(), left + 24, y, panelWidth - 48, line.color()) + 8;
         }
+        if (settings.saveFailed()) {
+            button(Component.translatable("config.spark_fix.litematica_save_retry"), left + 24, y, panelWidth - 48, () -> {
+                settings.trySave();
+                rebuildRequested = true;
+            });
+            y += 34;
+        }
         Button refresh = button(Component.translatable("rei_recipe_bridge.refresh"), left + 24, y, panelWidth - 48, () -> {
             settings.refresh();
             rebuildRequested = true;
@@ -278,6 +289,9 @@ class VanillaIntegrationSettingsScreen extends Screen {
         refresh.active = settings.canRefresh();
         refresh.setTooltip(Tooltip.create(Component.translatable(settings.canRefresh()
                 ? "config.spark_fix.rei_refresh_help" : "config.spark_fix.rei_refresh_no_world")));
+        y += 34;
+        button(Component.translatable("rei_recipe_bridge.cache_maintenance.open"), left + 24, y, panelWidth - 48,
+                () -> saveThen(() -> minecraft.setScreenAndShow(settings.cacheScreen(this))));
         return y + 34 - start;
     }
 
@@ -291,8 +305,12 @@ class VanillaIntegrationSettingsScreen extends Screen {
     }
 
     private void saveAndClose() {
-        state.save();
-        minecraft.setScreenAndShow(parent);
+        saveThen(() -> minecraft.setScreenAndShow(parent));
+    }
+
+    private void saveThen(Runnable next) {
+        if (state.trySave()) next.run();
+        else SettingsSaveFeedback.showFailure(this, state.saveFailures(), () -> saveThen(next));
     }
 
     @Override

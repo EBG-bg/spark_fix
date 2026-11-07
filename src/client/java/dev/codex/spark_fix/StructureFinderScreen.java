@@ -1,5 +1,6 @@
 package dev.codex.spark_fix;
 
+import net.fabricmc.loader.api.FabricLoader;
 import net.minecraft.client.gui.GuiGraphicsExtractor;
 import net.minecraft.client.gui.components.AbstractSliderButton;
 import net.minecraft.client.gui.components.Button;
@@ -9,6 +10,7 @@ import net.minecraft.client.gui.screens.Screen;
 import net.minecraft.client.input.KeyEvent;
 import net.minecraft.client.input.MouseButtonEvent;
 import net.minecraft.network.chat.Component;
+import net.minecraft.util.Util;
 import org.lwjgl.glfw.GLFW;
 
 import java.util.ArrayList;
@@ -32,6 +34,12 @@ public final class StructureFinderScreen extends Screen {
     private double scroll;
     private long lastFrame;
     private boolean draggingScroll;
+    private Button pauseButton;
+    private Button rescanButton;
+    private Component controlNotice;
+    private long noticeUntil;
+    private Button logButton;
+    private String lastFailure;
 
     public StructureFinderScreen(Screen parent) {
         super(Component.translatable("gui.spark_fix.structure_finder.title"));
@@ -101,11 +109,55 @@ public final class StructureFinderScreen extends Screen {
         });
         addRenderableWidget(new SimilaritySlider(contentLeft, searchY + 29, contentWidth));
         viewportTop = searchY + 62;
-        viewportBottom = Math.max(viewportTop + 1, height - 52);
+        viewportBottom = Math.max(viewportTop + 1, height - 66);
+        int controlWidth = Math.max(1, (contentWidth - 100) / 2);
+        pauseButton = addRenderableWidget(Button.builder(Component.empty(), ignored -> {
+                    StructureFinder.setPaused(!StructureFinder.paused());
+                    refreshScanControls();
+                }).bounds(contentLeft, height - 36, controlWidth, 22).build());
+        pauseButton.setTooltip(Tooltip.create(Component.translatable(
+                "gui.spark_fix.structure_finder.pause_hint")));
+        rescanButton = addRenderableWidget(Button.builder(Component.translatable(
+                "gui.spark_fix.structure_finder.rescan_nearby"), ignored -> {
+                    int queued = StructureFinder.rescanNearby();
+                    controlNotice = Component.translatable("gui.spark_fix.structure_finder.rescan_queued", queued);
+                    noticeUntil = System.nanoTime() + 3_000_000_000L;
+                }).bounds(contentLeft + controlWidth + 5, height - 36, controlWidth, 22).build());
+        rescanButton.setTooltip(Tooltip.create(Component.translatable(
+                "gui.spark_fix.structure_finder.rescan_nearby_hint")));
+        logButton = addRenderableWidget(Button.builder(Component.translatable(
+                        "gui.spark_fix.structure_finder.open_log"), ignored -> Util.getPlatform().openPath(
+                        FabricLoader.getInstance().getGameDir().resolve("logs").resolve("latest.log")))
+                .bounds(contentRight - 90, height - 60, 90, 18).build());
         addRenderableWidget(Button.builder(Component.translatable("config.spark_fix.done"), ignored -> onClose())
                 .bounds(panelLeft + panelWidth - 106, height - 36, 90, 22).build());
         rebuildRows();
+        refreshScanControls();
         setFocused(search);
+    }
+
+    private void refreshScanControls() {
+        if (pauseButton != null) {
+            pauseButton.setMessage(Component.translatable("gui.spark_fix.structure_finder."
+                    + (StructureFinder.paused() ? "resume" : "pause")));
+            pauseButton.active = !StructureFinder.selectedTypes().isEmpty();
+        }
+        if (rescanButton != null) rescanButton.active = StructureFinder.canRescanNearby();
+        if (logButton != null) {
+            String failure = StructureFinder.latestFailure();
+            logButton.visible = failure != null;
+            if (failure != null && !failure.equals(lastFailure)) {
+                logButton.setTooltip(Tooltip.create(Component.translatable(
+                        "gui.spark_fix.structure_finder.failure_details", failure)));
+            }
+            lastFailure = failure;
+        }
+    }
+
+    @Override
+    public void tick() {
+        super.tick();
+        refreshScanControls();
     }
 
     private void selectAllTypes() {
@@ -114,12 +166,12 @@ public final class StructureFinderScreen extends Screen {
             if (entry.detectable()) all.add(entry.id());
         }
         StructureFinder.setSelectedTypes(all);
-        SparkFixConfig.save();
+        SettingsSaveFeedback.saveNow();
     }
 
     private void clearAllTypes() {
         StructureFinder.setSelectedTypes(Set.of());
-        SparkFixConfig.save();
+        SettingsSaveFeedback.saveNow();
     }
 
     private void rebuildRows() {
@@ -236,19 +288,30 @@ public final class StructureFinderScreen extends Screen {
         Component status;
         int statusColor = 0xFFE0E5ED;
         if (StructureFinder.templateError() != null && !StructureFinder.templateError().isBlank()) {
-            status = Component.translatable("gui.spark_fix.structure_finder.load_failed");
-            statusColor = 0xFFFF9292;
+            status = Component.translatable(StructureFinder.retryingTemplates()
+                    ? "gui.spark_fix.structure_finder.templates_retrying"
+                    : "gui.spark_fix.structure_finder.load_failed");
+            statusColor = StructureFinder.retryingTemplates() ? 0xFFFFD782 : 0xFFFF9292;
         } else if (StructureFinder.templatesLoading()) {
             status = Component.translatable("gui.spark_fix.structure_finder.loading");
         } else if (StructureFinder.selectedTypes().isEmpty()) {
             status = Component.translatable("gui.spark_fix.structure_finder.none_selected");
+        } else if (controlNotice != null && System.nanoTime() < noticeUntil) {
+            status = controlNotice;
+        } else if (StructureFinder.paused()) {
+            status = Component.translatable("gui.spark_fix.structure_finder.paused_status");
+        } else if (StructureFinder.failedChunks() > 0) {
+            status = Component.translatable("gui.spark_fix.structure_finder.scan_issues",
+                    StructureFinder.scannedChunks(), StructureFinder.scanTotalChunks(),
+                    StructureFinder.failedChunks(), StructureFinder.retryingChunks());
+            statusColor = 0xFFFFD782;
         } else {
             status = Component.translatable("gui.spark_fix.structure_finder.status",
                     StructureFinder.selectedTypes().size(), StructureFinder.detections().size(),
                     StructureFinder.scannedChunks(), StructureFinder.scanTotalChunks());
         }
-        graphics.textWithWordWrap(font, status, panelLeft + 16, height - 36,
-                Math.max(1, panelWidth - 128), statusColor);
+        graphics.textWithWordWrap(font, status, panelLeft + 16, height - 57,
+                Math.max(1, panelWidth - 32 - (logButton.visible ? 96 : 0)), statusColor);
         if (maxScroll > 0) {
             int x = panelLeft + panelWidth - 11;
             int h = scrollThumbHeight();
@@ -272,8 +335,8 @@ public final class StructureFinderScreen extends Screen {
 
     @Override
     public void onClose() {
-        SparkFixConfig.save();
-        minecraft.setScreenAndShow(parent);
+        if (SparkFixConfig.trySave()) minecraft.setScreenAndShow(parent);
+        else SettingsSaveFeedback.showFailure(this, this::onClose);
     }
 
     private final class TypeButton extends Button {
@@ -298,7 +361,7 @@ public final class StructureFinderScreen extends Screen {
             if (!entry.detectable()) return;
             if (!selected.remove(entry.id())) selected.add(entry.id());
             StructureFinder.setSelectedTypes(selected);
-            SparkFixConfig.save();
+            SettingsSaveFeedback.saveNow();
         }
 
         @Override
@@ -362,7 +425,7 @@ public final class StructureFinderScreen extends Screen {
         @Override public boolean mouseScrolled(double x, double y, double horizontal, double vertical) { return false; }
 
         private void saveValue() {
-            SparkFixConfig.save();
+            SettingsSaveFeedback.saveNow();
             dirty = false;
         }
     }
@@ -405,7 +468,7 @@ public final class StructureFinderScreen extends Screen {
         public boolean mouseReleased(MouseButtonEvent event) {
             boolean handled = super.mouseReleased(event);
             if (event.button() == GLFW.GLFW_MOUSE_BUTTON_LEFT && dirty) {
-                SparkFixConfig.save();
+                SettingsSaveFeedback.saveNow();
                 dirty = false;
             }
             return handled;
@@ -418,7 +481,7 @@ public final class StructureFinderScreen extends Screen {
                 setValue(max <= 1 ? 0 : Math.clamp(Math.round(value * (max - 1)
                         + (event.isRight() ? 1 : -1)), 0, max - 1) / (double) (max - 1));
                 if (dirty) {
-                    SparkFixConfig.save();
+                    SettingsSaveFeedback.saveNow();
                     dirty = false;
                 }
                 return true;

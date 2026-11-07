@@ -1,6 +1,7 @@
 package dev.codex.spark_fix;
 
 import net.minecraft.network.chat.Component;
+import net.minecraft.client.gui.screens.Screen;
 import java.util.List;
 
 /** UI-facing contract with no REI types, so the ordinary screens remain optional-dependency safe. */
@@ -11,7 +12,11 @@ interface ReiInlineSettings {
     void toggleCapture();
     void refresh();
     boolean canRefresh();
+    boolean saveFailed();
+    boolean trySave();
     List<Line> information();
+    default boolean pollInformation() { return false; }
+    Screen cacheScreen(Screen parent);
 
     default Component vanillaLabel() {
         return optionLabel("rei_recipe_bridge.vanilla_toggle", provideVanilla());

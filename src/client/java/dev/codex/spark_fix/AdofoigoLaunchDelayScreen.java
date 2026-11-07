@@ -60,8 +60,8 @@ public final class AdofoigoLaunchDelayScreen extends Screen {
     private void saveAndClose() {
         if (!done.active) return;
         SparkFixConfig.setAdofoigoLaunchDelaySeconds(seconds);
-        SparkFixConfig.save();
-        onClose();
+        if (SparkFixConfig.trySave()) onClose();
+        else SettingsSaveFeedback.showFailure(this, this::saveAndClose);
     }
 
     @Override public void onClose() { minecraft.setScreenAndShow(parent); }

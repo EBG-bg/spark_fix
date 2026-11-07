@@ -39,7 +39,7 @@ final class SparkFixConfigScreen extends Screen {
         int top = Math.max(42, this.height / 2 - 68);
         this.addRenderableWidget(Button.builder(
                 Component.translatable("config.spark_fix.integration_settings"),
-                button -> this.minecraft.setScreenAndShow(IntegrationSettingsRouter.create(this)))
+                button -> saveThen(() -> this.minecraft.setScreenAndShow(IntegrationSettingsRouter.create(this))))
                 .bounds(this.width - 210, 8, 200, 20).build());
         this.addRenderableWidget(new StringWidget(center - 100, top + 2, 200, 14,
                 Component.translatable("config.spark_fix.rei_max_clicks"), this.font));
@@ -47,7 +47,12 @@ final class SparkFixConfigScreen extends Screen {
                 Component.translatable("config.spark_fix.rei_max_clicks")));
         this.maxClicksField.setMaxLength(5);
         this.maxClicksField.setValue(this.maxClicksDraft);
-        this.maxClicksField.setResponder(value -> this.maxClicksDraft = value);
+        this.maxClicksField.setTooltip(Tooltip.create(Component.translatable("config.spark_fix.max_clicks_range",
+                SparkFixConfig.MIN_MAX_REI_CLICKS, SparkFixConfig.MAX_MAX_REI_CLICKS)));
+        this.maxClicksField.setResponder(value -> {
+            this.maxClicksDraft = value;
+            this.maxClicksField.setTextColor(validMaxClicks() ? 0xFFE0E0E0 : 0xFFFF7272);
+        });
         this.addRenderableWidget(CycleButton.booleanBuilder(Component.translatable("config.spark_fix.on"),
                 Component.translatable("config.spark_fix.off"), this.scanAllTranslations)
                 .create(center - 100, top + 54, 200, 20,
@@ -59,11 +64,14 @@ final class SparkFixConfigScreen extends Screen {
                         Component.translatable("config.spark_fix.litematica_filter_favorites"),
                         (button, value) -> {
                             SparkFixConfig.setLitematicaFilterFavorites(value);
-                            SparkFixConfig.save();
+                            SettingsSaveFeedback.saveNow();
                         }));
         filterFavorites.setTooltip(Tooltip.create(Component.translatable("config.spark_fix.litematica_filter_favorites_hint")));
+        this.addRenderableWidget(Button.builder(Component.translatable("gui.spark_fix.patch_monitor.open"),
+                button -> saveThen(() -> this.minecraft.setScreenAndShow(new PatchMonitorScreen(this))))
+                .bounds(center - 100, top + 106, 200, 20).build());
         this.addRenderableWidget(Button.builder(Component.translatable("config.spark_fix.done"),
-                button -> this.saveAndClose()).bounds(center - 100, top + 112, 200, 20).build());
+                button -> this.saveAndClose()).bounds(center - 100, top + 132, 200, 20).build());
         this.setInitialFocus(this.maxClicksField);
     }
 
@@ -83,13 +91,26 @@ final class SparkFixConfigScreen extends Screen {
     }
 
     private void saveAndClose() {
-        int maxClicks;
+        saveThen(() -> this.minecraft.setScreenAndShow(this.parent));
+    }
+
+    private boolean validMaxClicks() {
+        try {
+            int value = Integer.parseInt(maxClicksDraft.trim());
+            return value >= SparkFixConfig.MIN_MAX_REI_CLICKS && value <= SparkFixConfig.MAX_MAX_REI_CLICKS;
+        } catch (NumberFormatException exception) { return false; }
+    }
+
+    private void saveThen(Runnable next) {
         this.maxClicksDraft = this.maxClicksField.getValue();
-        try { maxClicks = Integer.parseInt(this.maxClicksDraft.trim()); }
-        catch (NumberFormatException exception) { maxClicks = SparkFixConfig.DEFAULT_MAX_REI_CLICKS; }
-        SparkFixConfig.setMaxReiClicks(maxClicks);
+        if (!validMaxClicks()) {
+            maxClicksField.setTextColor(0xFFFF7272);
+            setFocused(maxClicksField);
+            return;
+        }
+        SparkFixConfig.setMaxReiClicks(Integer.parseInt(this.maxClicksDraft.trim()));
         SparkFixConfig.setScanAllTranslations(this.scanAllTranslations);
-        SparkFixConfig.save();
-        this.minecraft.setScreenAndShow(this.parent);
+        if (SparkFixConfig.trySave()) next.run();
+        else SettingsSaveFeedback.showFailure(this, () -> saveThen(next));
     }
 }

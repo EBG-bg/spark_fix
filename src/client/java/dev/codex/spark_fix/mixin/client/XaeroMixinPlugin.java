@@ -1,6 +1,7 @@
 package dev.codex.spark_fix.mixin.client;
 
 import net.fabricmc.loader.api.FabricLoader;
+import dev.codex.spark_fix.PatchHooks;
 import org.objectweb.asm.tree.ClassNode;
 import org.spongepowered.asm.mixin.extensibility.IMixinConfigPlugin;
 import org.spongepowered.asm.mixin.extensibility.IMixinInfo;
@@ -10,7 +11,7 @@ import java.util.Set;
 
 /** Keeps the Xaero integration optional and always enabled when the mod is present. */
 public final class XaeroMixinPlugin implements IMixinConfigPlugin {
-    @Override public void onLoad(String mixinPackage) { }
+    @Override public void onLoad(String mixinPackage) { PatchHooks.installObserver(); }
     @Override public String getRefMapperConfig() { return null; }
 
     @Override
@@ -21,5 +22,7 @@ public final class XaeroMixinPlugin implements IMixinConfigPlugin {
     @Override public void acceptTargets(Set<String> myTargets, Set<String> otherTargets) { }
     @Override public List<String> getMixins() { return null; }
     @Override public void preApply(String targetClassName, ClassNode targetClass, String mixinClassName, IMixinInfo mixinInfo) { }
-    @Override public void postApply(String targetClassName, ClassNode targetClass, String mixinClassName, IMixinInfo mixinInfo) { }
+    @Override public void postApply(String targetClassName, ClassNode targetClass, String mixinClassName, IMixinInfo mixinInfo) {
+        PatchHooks.watch(mixinClassName, targetClass);
+    }
 }

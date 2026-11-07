@@ -52,6 +52,12 @@ final class StructureFinderProgressHud {
             Component label = switch (progress.stage()) {
                 case LOADING -> Component.translatable("hud.spark_fix.structure_finder.loading");
                 case PREPARING -> Component.translatable("hud.spark_fix.structure_finder.preparing");
+                case PAUSED -> Component.translatable("hud.spark_fix.structure_finder.paused",
+                        progress.completed(), progress.total());
+                case RETRYING -> Component.translatable("hud.spark_fix.structure_finder.retrying",
+                        progress.completed(), progress.total());
+                case PARTIAL -> Component.translatable("hud.spark_fix.structure_finder.partial",
+                        progress.completed(), progress.total(), StructureFinder.failedChunks());
                 case COMPLETE -> Component.translatable("hud.spark_fix.structure_finder.complete",
                         progress.total(), progress.total());
                 case FAILED -> Component.translatable("gui.spark_fix.structure_finder.load_failed");
@@ -80,6 +86,8 @@ final class StructureFinderProgressHud {
         IntegrationSettingsStyle.roundedRect(graphics, left, top, width, BAR_HEIGHT, 2,
                 fade(0x90465363, frame.opacity));
         int color = progress.stage() == StructureFinder.ScanStage.COMPLETE ? 0xFF72D4A0
+                : progress.stage() == StructureFinder.ScanStage.PAUSED || progress.stage() == StructureFinder.ScanStage.RETRYING
+                        || progress.stage() == StructureFinder.ScanStage.PARTIAL ? 0xFFFFD782
                 : progress.stage() == StructureFinder.ScanStage.FAILED ? 0xFFFF9292 : 0xFF87B1F9;
         if (progress.stage() == StructureFinder.ScanStage.LOADING
                 || progress.stage() == StructureFinder.ScanStage.PREPARING) {

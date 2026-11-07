@@ -1,6 +1,7 @@
 package dev.codex.spark_fix.mixin.client;
 
 import dev.codex.spark_fix.SparkFixConfig;
+import dev.codex.spark_fix.PatchHooks;
 import net.fabricmc.loader.api.FabricLoader;
 import org.objectweb.asm.tree.ClassNode;
 import org.spongepowered.asm.mixin.extensibility.IMixinConfigPlugin;
@@ -11,7 +12,7 @@ import java.util.Set;
 
 /** Prevents the optional target mixin from loading unless both the mod and integration are enabled. */
 public final class LitematicaMixinPlugin implements IMixinConfigPlugin {
-    @Override public void onLoad(String mixinPackage) { }
+    @Override public void onLoad(String mixinPackage) { PatchHooks.installObserver(); }
     @Override public String getRefMapperConfig() { return null; }
 
     @Override
@@ -23,5 +24,7 @@ public final class LitematicaMixinPlugin implements IMixinConfigPlugin {
     @Override public void acceptTargets(Set<String> myTargets, Set<String> otherTargets) { }
     @Override public List<String> getMixins() { return null; }
     @Override public void preApply(String targetClassName, ClassNode targetClass, String mixinClassName, IMixinInfo mixinInfo) { }
-    @Override public void postApply(String targetClassName, ClassNode targetClass, String mixinClassName, IMixinInfo mixinInfo) { }
+    @Override public void postApply(String targetClassName, ClassNode targetClass, String mixinClassName, IMixinInfo mixinInfo) {
+        PatchHooks.watch(mixinClassName, targetClass);
+    }
 }

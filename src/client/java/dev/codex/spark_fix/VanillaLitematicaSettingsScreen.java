@@ -7,9 +7,11 @@ import net.minecraft.client.gui.components.Button;
 import net.minecraft.client.gui.components.EditBox;
 import net.minecraft.client.gui.components.StringWidget;
 import net.minecraft.client.gui.components.Tooltip;
+import net.minecraft.client.gui.components.toasts.SystemToast;
 import net.minecraft.client.gui.narration.NarrationElementOutput;
 import net.minecraft.client.gui.navigation.ScreenRectangle;
 import net.minecraft.client.gui.screens.Screen;
+import net.minecraft.client.gui.screens.ConfirmScreen;
 import net.minecraft.client.input.CharacterEvent;
 import net.minecraft.client.input.KeyEvent;
 import net.minecraft.client.input.MouseButtonEvent;
@@ -36,6 +38,9 @@ class VanillaLitematicaSettingsScreen extends Screen {
     private static final int SECTION_HEIGHT = 26;
     private static final long SETTLE_NANOS = 180_000_000L;
     private static final long SCROLL_NANOS = 180_000_000L;
+    private static final SystemToast.SystemToastId SAVE_FAILURE_TOAST = new SystemToast.SystemToastId();
+    /** Only the editable values survive a forced screen change, never a world or parent screen. */
+    private static PendingDraft pendingDraft;
 
     private final Screen parent;
     private final List<LitematicaConfigDiscovery.DiscoveredGroup> groups;
@@ -74,6 +79,10 @@ class VanillaLitematicaSettingsScreen extends Screen {
     private String allCategory = "";
     private EditBox favoritesSearchBox;
     private EditBox allSettingsSearchBox;
+    private Button favoritesModifiedButton;
+    private Button allModifiedButton;
+    private boolean favoritesModifiedOnly;
+    private boolean allModifiedOnly;
     private StringWidget favoritesHeading;
     private StringWidget othersHeading;
     private LitematicaCompactnessSlider compactnessSlider;
@@ -107,6 +116,7 @@ class VanillaLitematicaSettingsScreen extends Screen {
     private boolean layoutDirty;
     private boolean savedOnClose;
     private boolean openingChildScreen;
+    private List<Component> saveFailures = List.of();
     private String infoTooltipKey;
     private int infoTooltipOffset;
 
@@ -129,8 +139,24 @@ class VanillaLitematicaSettingsScreen extends Screen {
         Map<String, List<String>> mainNames = aliasPrimaryNames();
         Map<String, List<String>> presetAliases = LitematicaAliasPresets.apply(
                 discoveredKeys, litematicaAliases, appliedAliasPresets, mainNames);
-        customAliases = LitematicaCustomAliases.load(discoveredKeys, litematicaAliases, presetAliases, mainNames);
+        if (pendingDraft == null) {
+            customAliases = LitematicaCustomAliases.load(discoveredKeys, litematicaAliases, presetAliases, mainNames);
+        } else {
+            favoriteOrder.clear();
+            favoriteOrder.addAll(pendingDraft.favorites());
+            settingsOrder.clear();
+            pendingDraft.order().stream().filter(discoveredKeys::contains).forEach(settingsOrder::add);
+            discoveredKeys.stream().filter(key -> !settingsOrder.contains(key)).forEach(settingsOrder::add);
+            litematicaNames.putAll(pendingDraft.names());
+            litematicaAliases.clear();
+            litematicaAliases.putAll(pendingDraft.aliases());
+            appliedAliasPresets.addAll(pendingDraft.presets());
+            customAliases = pendingDraft.customAliases();
+            cachedOptions = null;
+        }
         SparkFixConfig.litematicaColumns(discoveredKeys).forEach((layout, keys) ->
+                layoutColumns.put(layout, new ArrayList<>(keys)));
+        if (pendingDraft != null) pendingDraft.columns().forEach((layout, keys) ->
                 layoutColumns.put(layout, new ArrayList<>(keys)));
     }
 
@@ -427,7 +453,8 @@ class VanillaLitematicaSettingsScreen extends Screen {
 
     private boolean regionFiltered(boolean favorite) {
         return filtersModules(favorite) || !(favorite ? favoritesQuery : allSettingsQuery).isBlank()
-                || !(favorite ? favoritesCategory : allCategory).isBlank();
+                || !(favorite ? favoritesCategory : allCategory).isBlank()
+                || (favorite ? favoritesModifiedOnly : allModifiedOnly);
     }
 
     private List<Option> options(String query, boolean favorite) {
@@ -444,9 +471,17 @@ class VanillaLitematicaSettingsScreen extends Screen {
                 available = available.stream().filter(option -> option.group().equals(group)).toList();
             }
         }
-        String normalizedQuery = query == null ? "" : query.trim().toLowerCase(Locale.ROOT);
-        if (normalizedQuery.isBlank()) return available;
-        return available.stream().filter(option -> optionSearchText.get(option.key()).contains(normalizedQuery)).toList();
+        if (favorite ? favoritesModifiedOnly : allModifiedOnly) available = available.stream()
+                .filter(option -> LitematicaConfigDiscovery.isModified(option.object())).toList();
+        return available.stream().filter(option -> matchesSearch(optionSearchText.get(option.key()), query)).toList();
+    }
+
+    private static boolean matchesSearch(String text, String query) {
+        if (query == null || query.isBlank()) return true;
+        for (String word : query.strip().toLowerCase(Locale.ROOT).split("(?U)\\s+")) {
+            if (!text.contains(word)) return false;
+        }
+        return true;
     }
 
     private List<Option> discoverOptions() {
@@ -492,8 +527,24 @@ class VanillaLitematicaSettingsScreen extends Screen {
         contentWidgets.add(heading);
         addWidget(heading);
         int searchX = panelLeft + 18 + headingWidth + 10;
-        int remainingWidth = panelLeft + panelWidth - 18 - searchX;
-        int searchWidth = hasCategories ? Math.min(150, Math.max(60, remainingWidth / 3)) : remainingWidth;
+        Component modifiedLabel = Component.translatable("config.spark_fix.litematica_only_modified");
+        int modifiedWidth = Math.min(90, Math.max(38, font.width(modifiedLabel) + 14));
+        int modifiedX = panelLeft + panelWidth - 18 - modifiedWidth;
+        boolean modified = favorites ? favoritesModifiedOnly : allModifiedOnly;
+        var modifiedButton = Button.builder(Component.literal(modified ? "✓ " : "")
+                .append(modifiedLabel), ignored -> {
+            if (favorites) favoritesModifiedOnly = !favoritesModifiedOnly;
+            else allModifiedOnly = !allModifiedOnly;
+            filteredColumns.keySet().removeIf(key -> key.startsWith(favorites ? "favorites." : "settings."));
+            layoutDirty = true;
+        }).bounds(modifiedX, y + 2, modifiedWidth, 20).build();
+        modifiedButton.setTooltip(Tooltip.create(Component.translatable("config.spark_fix.litematica_only_modified_hint")));
+        if (favorites) favoritesModifiedButton = modifiedButton;
+        else allModifiedButton = modifiedButton;
+        contentWidgets.add(modifiedButton);
+        addWidget(modifiedButton);
+        int remainingWidth = Math.max(1, modifiedX - 6 - searchX);
+        int searchWidth = hasCategories ? Math.min(150, Math.max(32, remainingWidth / 3)) : remainingWidth;
         EditBox search = new EditBox(font, searchX, y + 2, searchWidth, 20,
                 Component.translatable("config.spark_fix.litematica_search")) {
             @Override public boolean isMouseOver(double mouseX, double mouseY) {
@@ -530,6 +581,7 @@ class VanillaLitematicaSettingsScreen extends Screen {
         if (options.isEmpty()) {
             String key = (favorite ? favoritesQuery : allSettingsQuery).isBlank()
                     && (favorite ? favoritesCategory : allCategory).isBlank()
+                    && !(favorite ? favoritesModifiedOnly : allModifiedOnly)
                     ? filtersModules(favorite) && (!favorite || !favoriteOrder.isEmpty())
                             ? "config.spark_fix.litematica_modules_hidden"
                             : favorite ? "config.spark_fix.litematica_favorites_empty"
@@ -901,7 +953,10 @@ class VanillaLitematicaSettingsScreen extends Screen {
         setFocused(null);
         // This parent may never be shown again if the connection closes in the editor.
         // Its confirmed state is independent of the child's unconfirmed draft.
-        saveConfirmedSettings();
+        if (!saveConfirmedSettings()) {
+            showSaveFailure(() -> openChildScreen(editor));
+            return;
+        }
         openingChildScreen = true;
         try {
             minecraft.setScreenAndShow(editor);
@@ -1085,6 +1140,8 @@ class VanillaLitematicaSettingsScreen extends Screen {
         search.extractRenderState(graphics, mouseX, mouseY, partialTick);
         var bar = heading == favoritesHeading ? favoritesCategories : allCategories;
         if (bar != null) bar.extractRenderState(graphics, mouseX, mouseY, partialTick);
+        var modified = heading == favoritesHeading ? favoritesModifiedButton : allModifiedButton;
+        if (modified != null) modified.extractRenderState(graphics, mouseX, mouseY, partialTick);
     }
 
     private void drawCard(GuiGraphicsExtractor graphics, Card card, int x, int y, float scale,
@@ -1491,12 +1548,14 @@ class VanillaLitematicaSettingsScreen extends Screen {
             int headerY = favoritesDisplayY();
             favoritesHeading.setY(headerY + 2);
             favoritesSearchBox.setY(headerY + 2);
+            if (favoritesModifiedButton != null) favoritesModifiedButton.setY(headerY + 2);
             if (favoritesCategories != null) favoritesCategories.setY(headerY + 2);
         }
         if (othersHeading != null) {
             int headerY = Math.max(contentTop, othersHeaderY);
             othersHeading.setY(headerY + 2);
             allSettingsSearchBox.setY(headerY + 2);
+            if (allModifiedButton != null) allModifiedButton.setY(headerY + 2);
             if (allCategories != null) allCategories.setY(headerY + 2);
         }
         // Newly visible controls are created once; scrolling keeps existing native inputs alive.
@@ -1544,32 +1603,80 @@ class VanillaLitematicaSettingsScreen extends Screen {
         return Math.max(min, Math.min(max, value));
     }
 
-    private void saveOnClose() {
-        if (savedOnClose) return;
+    private boolean saveOnClose() {
+        if (savedOnClose) return true;
         setFocused(null);
-        savedOnClose = true;
-        saveConfirmedSettings();
+        savedOnClose = saveConfirmedSettings();
+        return savedOnClose;
     }
 
-    private void saveConfirmedSettings() {
-        customAliases.save(litematicaAliases, aliasPrimaryNames());
+    private boolean saveConfirmedSettings() {
+        List<Component> failed = new ArrayList<>();
+        if (!customAliases.trySave(litematicaAliases, aliasPrimaryNames())) {
+            failed.add(Component.translatable("config.spark_fix.litematica_save_part_aliases"));
+        }
         SparkFixConfig.updateLitematicaCustomAliases(customAliases.savedAliases(), customAliases.deletedAliases());
         SparkFixConfig.setLitematicaSettingsSnapshot(favoriteOrder, settingsOrder,
                 litematicaNames, litematicaAliases, layoutColumns, discoveredKeys);
         SparkFixConfig.setLitematicaAliasPresetsApplied(new ArrayList<>(appliedAliasPresets));
-        LitematicaConfigDiscovery.save(groups);
-        if (renderLayers != null) renderLayers.save();
-        SparkFixConfig.save();
+        for (String id : LitematicaConfigDiscovery.trySave(groups)) {
+            failed.add(Component.translatable("config.spark_fix.litematica_save_part_mod", moduleNames.getOrDefault(id, id)));
+        }
+        if (renderLayers != null && !renderLayers.trySave()) {
+            failed.add(Component.translatable("config.spark_fix.litematica_save_part_layers"));
+        }
+        if (!SparkFixConfig.trySave()) {
+            failed.add(Component.translatable("config.spark_fix.litematica_save_part_layout"));
+        }
+        saveFailures = List.copyOf(failed);
+        pendingDraft = failed.isEmpty() ? null : new PendingDraft(List.copyOf(favoriteOrder), List.copyOf(settingsOrder),
+                copyLists(litematicaNames), copyLists(litematicaAliases), copyLists(layoutColumns),
+                List.copyOf(appliedAliasPresets), customAliases);
+        return failed.isEmpty();
     }
 
     private void closeScreen() {
-        saveOnClose();
-        minecraft.setScreenAndShow(parent);
+        if (saveOnClose()) minecraft.setScreenAndShow(parent);
+        else showSaveFailure(this::closeScreen);
+    }
+
+    private void showSaveFailure(Runnable retry) {
+        Component failedParts = Component.empty();
+        for (int i = 0; i < saveFailures.size(); i++) {
+            if (i != 0) failedParts = failedParts.copy().append(Component.literal(", "));
+            failedParts = failedParts.copy().append(saveFailures.get(i));
+        }
+        var dialog = new ConfirmScreen(again -> {
+            minecraft.setScreenAndShow(this);
+            if (again) retry.run();
+        }, Component.translatable("config.spark_fix.litematica_save_failed"),
+                Component.translatable("config.spark_fix.litematica_save_failed_message", failedParts),
+                Component.translatable("config.spark_fix.litematica_save_retry"),
+                Component.translatable("config.spark_fix.litematica_save_back"));
+        openingChildScreen = true;
+        try { minecraft.setScreenAndShow(dialog); }
+        finally { openingChildScreen = false; }
+    }
+
+    private static Map<String, List<String>> copyLists(Map<String, List<String>> source) {
+        Map<String, List<String>> copy = new LinkedHashMap<>();
+        source.forEach((key, values) -> copy.put(key, List.copyOf(values)));
+        return Map.copyOf(copy);
     }
 
     @Override public void onClose() { closeScreen(); }
 
-    @Override public void removed() { if (!openingChildScreen) saveOnClose(); }
+    @Override public void removed() {
+        if (!openingChildScreen && !saveOnClose() && minecraft.gui.toastManager() != null) {
+            SystemToast.addOrUpdate(minecraft.gui.toastManager(), SAVE_FAILURE_TOAST,
+                    Component.translatable("config.spark_fix.litematica_save_failed"),
+                    Component.translatable("config.spark_fix.litematica_save_recover"));
+        }
+    }
+
+    private record PendingDraft(List<String> favorites, List<String> order, Map<String, List<String>> names,
+                                Map<String, List<String>> aliases, Map<String, List<String>> columns,
+                                List<String> presets, LitematicaCustomAliases customAliases) { }
 
     record Option(String key, String group, Object object, String name, String comment) { }
     private record DropTarget(int column, String anchorKey, boolean after, int x, int y, int width) { }

@@ -35,6 +35,7 @@ import java.util.Comparator;
 import java.util.HashMap;
 import java.util.HexFormat;
 import java.util.IdentityHashMap;
+import java.util.Iterator;
 import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
@@ -69,6 +70,10 @@ public final class StructureFinder {
     private static final int MAX_NOTIFICATION_RESULTS = 8;
     private static final long WORKER_SLICE_NANOS = 8_000_000;
     private static final long WORKER_REST_NANOS = 2_000_000;
+    private static final String MATCHER_RULES = "matcher-4";
+    private static final Object PAUSE_LOCK = new Object();
+    private static volatile boolean paused;
+    private static ScanProgress pausedProgress;
     private static final Set<Long> LOADED_CHUNKS = new LinkedHashSet<>();
     private static final Set<Long> NEW_CHUNKS = new LinkedHashSet<>();
     private static final Set<Long> CHANGED_CHUNKS = new LinkedHashSet<>();
@@ -93,6 +98,10 @@ public final class StructureFinder {
     private static int compileIndex;
     private static boolean templatesReady;
     private static String loadError;
+    private static int templateFailures;
+    private static long templateRetryAt;
+    private static final StructureFinderFailures FAILURES = new StructureFinderFailures();
+    private static String lastLoggedScanFailure;
     private static boolean registered;
     private static Map<Block, List<Anchor>> anchors = Map.of();
     private static volatile StructureFinderScanFilter discoveryFilter;
@@ -110,6 +119,7 @@ public final class StructureFinder {
     private static final ArrayDeque<Long> priorityChunks = new ArrayDeque<>();
     private static final Set<Long> freshQueued = new LinkedHashSet<>();
     private static final ArrayDeque<Long> freshChunks = new ArrayDeque<>();
+    private static final Set<Long> forcedRescans = new LinkedHashSet<>();
     private static final Map<Long, ScanJob> activeJobs = new LinkedHashMap<>();
     private static final Map<Long, CachedSnapshot> snapshotCache = new LinkedHashMap<>(128, 0.75f, true);
     private static ThreadPoolExecutor workers;
@@ -132,13 +142,14 @@ public final class StructureFinder {
     private static StructureFinderScanCache scanCache;
     private static String cacheIdentity;
     private static String templateSignature;
+    private static Iterator<BlockState> signatureStates;
     private static final MessageDigest TEMPLATE_DIGEST = sha256();
 
     private StructureFinder() {}
 
     public record Detection(String type, BlockPos pos, AABB bounds, int similarity) {}
 
-    public enum ScanStage { IDLE, LOADING, PREPARING, SCANNING, COMPLETE, FAILED }
+    public enum ScanStage { IDLE, LOADING, PREPARING, SCANNING, RETRYING, PARTIAL, PAUSED, COMPLETE, FAILED }
 
     public record ScanProgress(ScanStage stage, int completed, int total, double fraction, long revision) {}
 
@@ -170,6 +181,49 @@ public final class StructureFinder {
 
     public static Set<String> selectedTypes() {
         return registered ? selected : validTypes(SparkFixConfig.selectedStructureTypes());
+    }
+
+    public static boolean paused() { return paused; }
+
+    /** Pausing keeps task cursors, queued chunks, cached matches and the selected types. */
+    public static void setPaused(boolean value) {
+        synchronized (PAUSE_LOCK) {
+            if (paused == value) return;
+            if (value) pausedProgress = currentScanProgress();
+            paused = value;
+            if (!value) PAUSE_LOCK.notifyAll();
+        }
+    }
+
+    public static boolean canRescanNearby() {
+        Minecraft client = Minecraft.getInstance();
+        return registered && world != null && client.level == world && client.player != null
+                && !selected.isEmpty() && templatesReady && !indexDirty && !anchors.isEmpty()
+                && passStarted && (scanCache == null || scanCache.ready());
+    }
+
+    /** Recheck the selected structures in the loaded 9x9 area, without requesting chunks. */
+    public static int rescanNearby() {
+        if (!canRescanNearby()) return 0;
+        Minecraft client = Minecraft.getInstance();
+        TICK_CHUNKS.clear();
+        ChunkPos center = client.player.chunkPosition();
+        int queued = 0;
+        for (int ring = 0; ring <= 4; ring++) {
+            for (int offset = 0; offset < Math.max(1, ring * 8); offset++) {
+                long packed = ringChunk(center, ring, offset);
+                if (!isLiveScannableChunk(packed)) continue;
+                cancelJob(packed);
+                snapshotCache.remove(packed);
+                LOADED_CHUNKS.add(packed);
+                enqueueChunk(packed, false);
+                DEFERRED_CHUNKS.remove(packed);
+                forcedRescans.add(packed);
+                queueRescan(packed);
+                queued++;
+            }
+        }
+        return queued;
     }
 
     public static void setSelectedTypes(Set<String> types) {
@@ -218,6 +272,10 @@ public final class StructureFinder {
     public static int scanTotalChunks() { return scheduledChunks.size(); }
     public static boolean templatesLoading() { return registered && !selected.isEmpty() && !templatesReady && loadError == null; }
     public static String templateError() { return loadError; }
+    public static int failedChunks() { return FAILURES.count(); }
+    public static int retryingChunks() { return FAILURES.pending(); }
+    public static boolean retryingTemplates() { return loadError != null && templateRetryAt != 0; }
+    public static String latestFailure() { return loadError != null ? loadError : FAILURES.recentReason(); }
 
     public static ScanProgress scanProgress() {
         if (!registered || world == null || selected.isEmpty()) return progress(ScanStage.IDLE, 0, 0, 0);
@@ -227,7 +285,10 @@ public final class StructureFinder {
     static ScanProgress currentScanProgress() {
         int total = scheduledChunks.size();
         int completed = Math.min(completedChunks.size(), total);
-        if (loadError != null) return progress(ScanStage.FAILED, completed, total, 0);
+        if (loadError != null) return progress(retryingTemplates() ? ScanStage.RETRYING : ScanStage.FAILED,
+                completed, total, 0);
+        if (paused && pausedProgress != null) return progress(ScanStage.PAUSED,
+                pausedProgress.completed(), pausedProgress.total(), pausedProgress.fraction());
         if (!templatesReady) return progress(ScanStage.LOADING, completed, total, 0);
         if (indexDirty) return progress(ScanStage.PREPARING, completed, total, 0);
         if (anchors.isEmpty()) return progress(ScanStage.IDLE, 0, 0, 0);
@@ -240,11 +301,21 @@ public final class StructureFinder {
             return progress(ScanStage.COMPLETE, completed, total, 1);
         }
         if (total == 0) return progress(ScanStage.PREPARING, 0, 0, 0);
+        if (FAILURES.count() > 0 && completed + FAILURES.count() == total && activeJobs.isEmpty()
+                && NEW_CHUNKS.isEmpty() && READY_CHANGED_CHUNKS.isEmpty() && changedChunkPreparation == null) {
+            return progress(FAILURES.pending() == 0 ? ScanStage.PARTIAL : ScanStage.RETRYING,
+                    completed, total, scanFraction(completed, total));
+        }
+        return progress(ScanStage.SCANNING, completed, total, scanFraction(completed, total));
+    }
+
+    private static double scanFraction(int completed, int total) {
+        if (total == 0) return 0;
         double partial = 0;
         for (ScanJob job : activeJobs.values()) {
             if (!completedChunks.contains(job.packed)) partial += job.fraction;
         }
-        return progress(ScanStage.SCANNING, completed, total, Math.min(0.999, (completed + partial) / total));
+        return Math.min(0.999, (completed + partial) / total);
     }
 
     static double chunkScanFraction(int sections, int section, int block, boolean checkingCandidate) {
@@ -262,6 +333,7 @@ public final class StructureFinder {
         if (world == level) return;
         closeScanCache();
         world = level;
+        setPaused(false);
         StructureFinderXaeroBridge.clear();
         LOADED_CHUNKS.clear();
         TICK_CHUNKS.clear();
@@ -269,6 +341,10 @@ public final class StructureFinder {
         detections = List.of();
         indexDirty = true;
         pendingIndex = null;
+        if (!templatesReady && loadError != null) {
+            templateFailures = 0;
+            templateRetryAt = 1;
+        }
         resetPass();
     }
 
@@ -289,6 +365,9 @@ public final class StructureFinder {
         priorityChunks.clear();
         freshQueued.clear();
         freshChunks.clear();
+        forcedRescans.clear();
+        FAILURES.clear();
+        lastLoggedScanFailure = null;
         chunkDispatches = 0;
         NEW_CHUNKS.clear();
         CHANGED_CHUNKS.clear();
@@ -299,6 +378,7 @@ public final class StructureFinder {
         passPreparation = null;
         newChunkPreparation = null;
         changedChunkPreparation = null;
+        if (paused) pausedProgress = progress(ScanStage.PAUSED, 0, 0, 0);
     }
 
     private static void tick(Minecraft client) {
@@ -308,6 +388,7 @@ public final class StructureFinder {
         RESULTS.expire(System.nanoTime() / 1_000_000);
         detections = RESULTS.detections();
         sendNotifications(client);
+        if (paused) return;
         scanTick++;
         TICK_CHUNKS.clear();
         long deadline = System.nanoTime() + TICK_BUDGET_NANOS;
@@ -344,6 +425,7 @@ public final class StructureFinder {
         }
         prepareChangedChunks(Math.min(deadline, System.nanoTime() + TICK_BUDGET_NANOS / 4));
         collectJobs(deadline);
+        retryFailedChunks(System.nanoTime(), deadline);
         if (passIndex >= 1024) {
             pass = new ArrayList<>(pass.subList(passIndex, pass.size()));
             passIndex = 0;
@@ -381,6 +463,7 @@ public final class StructureFinder {
 
     private static void receiveChunk(long packed) {
         snapshotCache.remove(packed);
+        clearRegionFailures(packed);
         // CHUNK_LOAD also fires for repeated full packets at an existing coordinate.
         if (LOADED_CHUNKS.add(packed)) {
             NEW_CHUNKS.add(packed);
@@ -404,6 +487,7 @@ public final class StructureFinder {
         // The palette cache must not survive an in-place LevelChunk mutation.
         snapshotCache.remove(packed);
         invalidateCachedRegion(packed);
+        clearRegionFailures(packed);
         if (!passStarted) return;
         CHANGED_CHUNKS.add(packed);
         ChunkPos changed = ChunkPos.unpack(packed);
@@ -446,6 +530,27 @@ public final class StructureFinder {
         }
     }
 
+    /** A real content/load change permits a fresh attempt for dependent regions. */
+    private static void clearRegionFailures(long packed) {
+        if (FAILURES.count() == 0) return;
+        ChunkPos changed = ChunkPos.unpack(packed);
+        for (int ring = 0; ring <= priorityRadius; ring++) {
+            for (int offset = 0; offset < Math.max(1, ring * 8); offset++) {
+                long candidate = ringChunk(changed, ring, offset);
+                if (FAILURES.remove(candidate)) queueRescan(candidate);
+            }
+        }
+    }
+
+    private static void retryFailedChunks(long now, long deadline) {
+        for (int count = 0; count < 8 && System.nanoTime() < deadline; count++) {
+            Long chunk = FAILURES.pollDue(now);
+            if (chunk == null) break;
+            if (!scheduledChunks.contains(chunk)) FAILURES.remove(chunk);
+            else queueRescan(chunk);
+        }
+    }
+
     private static MessageDigest sha256() {
         try {
             return MessageDigest.getInstance("SHA-256");
@@ -482,7 +587,7 @@ public final class StructureFinder {
             identity = "server:" + data.ip.trim().toLowerCase(Locale.ROOT);
         }
         String dimension = world.dimension().identifier().toString();
-        String rules = "matcher-3:" + templateSignature + ":" + similarity;
+        String rules = MATCHER_RULES + ":" + templateSignature + ":" + similarity;
         String key = identity + '\n' + dimension + '\n' + rules;
         if (key.equals(cacheIdentity)) return;
         closeScanCache();
@@ -578,7 +683,8 @@ public final class StructureFinder {
             for (int ring = 0; ring <= 4 && packed == null; ring++) {
                 for (int offset = 0; offset < Math.max(1, ring * 8); offset++) {
                     long nearby = ringChunk(center, ring, offset);
-                    if (scheduledChunks.contains(nearby) && !DEFERRED_CHUNKS.contains(nearby) && !activeJobs.containsKey(nearby)
+                    if (scheduledChunks.contains(nearby) && !DEFERRED_CHUNKS.contains(nearby)
+                            && !FAILURES.blocked(nearby) && !activeJobs.containsKey(nearby)
                             && (!completedChunks.contains(nearby) || priorityQueued.contains(nearby))) {
                         packed = nearby;
                         break;
@@ -589,14 +695,16 @@ public final class StructureFinder {
         while (packed == null && !freshChunks.isEmpty()) {
             long arrived = freshChunks.removeFirst();
             freshQueued.remove(arrived);
-            if (scheduledChunks.contains(arrived) && !DEFERRED_CHUNKS.contains(arrived) && !activeJobs.containsKey(arrived)
+            if (scheduledChunks.contains(arrived) && !DEFERRED_CHUNKS.contains(arrived)
+                    && !FAILURES.blocked(arrived) && !activeJobs.containsKey(arrived)
                     && !completedChunks.contains(arrived)) packed = arrived;
         }
         if (packed == null) packed = nextPassChunk();
         while (packed == null && !priorityChunks.isEmpty()) {
             long rescan = priorityChunks.removeFirst();
             priorityQueued.remove(rescan);
-            if (scheduledChunks.contains(rescan) && !DEFERRED_CHUNKS.contains(rescan) && !activeJobs.containsKey(rescan)) packed = rescan;
+            if (scheduledChunks.contains(rescan) && !DEFERRED_CHUNKS.contains(rescan)
+                    && !FAILURES.blocked(rescan) && !activeJobs.containsKey(rescan)) packed = rescan;
         }
         if (packed != null) {
             if (freshQueued.remove(packed)) freshChunks.remove(packed);
@@ -608,7 +716,8 @@ public final class StructureFinder {
     private static Long nextPassChunk() {
         for (int skipped = 0; skipped < MAX_NEW_CHUNK_STEPS && passIndex < pass.size(); skipped++) {
             long packed = pass.get(passIndex++);
-            if (scheduledChunks.contains(packed) && !DEFERRED_CHUNKS.contains(packed) && !activeJobs.containsKey(packed)
+            if (scheduledChunks.contains(packed) && !DEFERRED_CHUNKS.contains(packed)
+                    && !FAILURES.blocked(packed) && !activeJobs.containsKey(packed)
                     && !completedChunks.contains(packed)) return packed;
         }
         return null;
@@ -617,7 +726,7 @@ public final class StructureFinder {
     private static void queueRescan(long packed) {
         // A neighbouring update changes comparison coverage, not this chunk's
         // palette. Reuse its immutable snapshot and decoded section caches.
-        if (DEFERRED_CHUNKS.contains(packed)) return;
+        if (DEFERRED_CHUNKS.contains(packed) || FAILURES.blocked(packed)) return;
         ScanJob job = activeJobs.get(packed);
         if (job != null) {
             job.rerun = true;
@@ -708,6 +817,16 @@ public final class StructureFinder {
                 iterator.remove();
                 continue;
             }
+            try {
+                if (job.pendingDetections == null) job.pendingDetections = job.future.get();
+            } catch (InterruptedException exception) {
+                Thread.currentThread().interrupt();
+                return;
+            } catch (java.util.concurrent.ExecutionException exception) {
+                iterator.remove();
+                recordJobFailure(job, exception.getCause(), System.nanoTime());
+                continue;
+            }
             LevelChunk live = loadedChunk(world, ChunkPos.getX(job.packed), ChunkPos.getZ(job.packed));
             CachedSnapshot source = job.source;
             if (live == null) {
@@ -721,8 +840,7 @@ public final class StructureFinder {
                 queueRescan(job.packed);
                 continue;
             }
-            try {
-                if (job.pendingDetections == null) job.pendingDetections = job.future.get();
+            {
                 // All shared result state and chat notifications stay on the client thread.
                 // Large result batches obey the same frame budget as preparation.
                 while (job.resultIndex < job.pendingDetections.size()) {
@@ -748,21 +866,31 @@ public final class StructureFinder {
                 }
                 iterator.remove();
                 completedChunks.add(job.packed);
+                FAILURES.remove(job.packed);
+                forcedRescans.remove(job.packed);
                 previouslyScannedChunks.add(job.packed);
                 if (job.missingChunks.isEmpty()) missingNeighbours.remove(job.packed);
                 else missingNeighbours.put(job.packed, Set.copyOf(job.missingChunks));
-            } catch (InterruptedException exception) {
-                Thread.currentThread().interrupt();
-                return;
-            } catch (java.util.concurrent.ExecutionException exception) {
-                iterator.remove();
-                loadError = "Scan failed: " + exception.getCause().getClass().getSimpleName();
-                SparkFixClient.LOGGER.error("Structure Finder background scan failed", exception.getCause());
-                cancelJobs();
-                return;
             }
         }
         detections = RESULTS.detections();
+    }
+
+    private static void recordJobFailure(ScanJob job, Throwable cause, long now) {
+        completedChunks.remove(job.packed);
+        if (snapshotPreparation != null && snapshotPreparation.job == job) snapshotPreparation = null;
+        Long evicted = FAILURES.failed(job.packed, job.revision, cause, now);
+        if (evicted != null) {
+            scheduledChunks.remove(evicted);
+            completedChunks.remove(evicted);
+        }
+        ChunkPos pos = ChunkPos.unpack(job.packed);
+        String reason = FAILURES.recentReason();
+        if (!reason.equals(lastLoggedScanFailure)) {
+            lastLoggedScanFailure = reason;
+            SparkFixClient.LOGGER.warn("Structure Finder could not scan chunk {}, {} (attempt {}/3); other chunks continue",
+                    pos.x(), pos.z(), FAILURES.attempts(job.packed), cause);
+        }
     }
 
     /** Copy palette storage only on the client thread, one section per budgeted step. */
@@ -1061,7 +1189,18 @@ public final class StructureFinder {
 
     private static boolean prepareTemplates(long deadline) {
         if (templatesReady) return true;
-        if (loadError != null) return false;
+        if (loadError != null) {
+            if (templateRetryAt == 0 || System.nanoTime() < templateRetryAt) return false;
+            templateFuture = StructureFinderCatalog.retryFailedPatterns(templateFuture);
+            rawPatterns = null;
+            compileIndex = 0;
+            compiledPatterns.clear();
+            signatureStates = null;
+            templateSignature = null;
+            TEMPLATE_DIGEST.reset();
+            loadError = null;
+            templateRetryAt = 0;
+        }
         if (templateFuture == null) templateFuture = StructureFinderCatalog.patternsFuture();
         if (!templateFuture.isDone()) return false;
         if (rawPatterns == null) {
@@ -1070,8 +1209,7 @@ public final class StructureFinder {
                 if (rawPatterns.isEmpty()) throw new IllegalStateException("No vanilla structure fingerprints loaded");
                 SparkFixClient.LOGGER.info("Structure Finder loaded {} vanilla structure fingerprints", rawPatterns.size());
             } catch (CompletionException | IllegalStateException exception) {
-                loadError = exception.toString();
-                SparkFixClient.LOGGER.error("Unable to load Structure Finder templates", exception);
+                recordTemplateFailure(exception, System.nanoTime());
                 return false;
             }
         }
@@ -1086,19 +1224,33 @@ public final class StructureFinder {
                 }
             }
         }
-        templatesReady = compileIndex == rawPatterns.size();
-        if (templatesReady && templateSignature == null) {
-            for (Block block : BuiltInRegistries.BLOCK) {
-                String registry = BuiltInRegistries.BLOCK.getKey(block) + ":" + Block.getId(block.defaultBlockState())
-                        + ":" + block.getStateDefinition().getPossibleStates().size();
-                TEMPLATE_DIGEST.update(registry.getBytes(StandardCharsets.UTF_8));
-            }
-            FabricLoader.getInstance().getAllMods().stream()
-                    .map(mod -> mod.getMetadata().getId() + ':' + mod.getMetadata().getVersion().getFriendlyString())
-                    .sorted().forEach(mod -> TEMPLATE_DIGEST.update(mod.getBytes(StandardCharsets.UTF_8)));
+        if (compileIndex < rawPatterns.size()) return false;
+        // Content hashes use registry state IDs, so their actual mapping matters. A
+        // version bump in an unrelated UI or audio mod does not change scan results.
+        // Resolve this larger mapping within the same preparation budget as templates.
+        if (signatureStates == null) signatureStates = Block.BLOCK_STATE_REGISTRY.iterator();
+        while (signatureStates.hasNext() && System.nanoTime() < deadline) {
+            BlockState state = signatureStates.next();
+            String registry = Block.getId(state) + ":" + state + '\n';
+            TEMPLATE_DIGEST.update(registry.getBytes(StandardCharsets.UTF_8));
+        }
+        if (!signatureStates.hasNext()) {
             templateSignature = HexFormat.of().formatHex(TEMPLATE_DIGEST.digest());
+            signatureStates = null;
+            templatesReady = true;
         }
         return templatesReady;
+    }
+
+    private static void recordTemplateFailure(Throwable failure, long now) {
+        Throwable cause = failure instanceof CompletionException && failure.getCause() != null
+                ? failure.getCause() : failure;
+        loadError = cause.getClass().getSimpleName() + (cause.getMessage() == null ? "" : ": " + cause.getMessage());
+        templateFailures++;
+        templateRetryAt = templateFailures >= 3 ? 0
+                : now + TimeUnit.SECONDS.toNanos(templateFailures == 1 ? 1 : 3);
+        SparkFixClient.LOGGER.warn("Structure Finder templates could not be loaded (attempt {}/3)",
+                templateFailures, cause);
     }
 
     private static CompiledPattern compile(StructureFinderCatalog.Pattern pattern) {
@@ -1272,6 +1424,8 @@ public final class StructureFinder {
         priorityQueued.clear();
         freshChunks.clear();
         freshQueued.clear();
+        forcedRescans.clear();
+        FAILURES.clear();
         chunkDispatches = 0;
         NEW_CHUNKS.clear();
         CHANGED_CHUNKS.clear();
@@ -1298,6 +1452,8 @@ public final class StructureFinder {
         priorityChunks.remove(packed);
         freshQueued.remove(packed);
         freshChunks.remove(packed);
+        forcedRescans.remove(packed);
+        FAILURES.remove(packed);
         TICK_CHUNKS.remove(packed);
         if (newChunkPreparation != null && newChunkPreparation.center.pack() == packed) {
             newChunkPreparation = null;
@@ -1450,6 +1606,7 @@ public final class StructureFinder {
         final Set<String> types;
         final int playerY;
         final boolean persistent;
+        final boolean forceRescan;
         final Set<Long> missingChunks = new LinkedHashSet<>();
         boolean skipNeighbours;
         volatile boolean cancelled;
@@ -1473,15 +1630,16 @@ public final class StructureFinder {
             types = indexedTypes;
             this.playerY = playerY;
             persistent = scanCache != null;
+            forceRescan = forcedRescans.contains(packed);
         }
 
         List<Detection> scan(Long2ObjectOpenHashMap<ChunkSnapshot> region) {
             ChunkSnapshot chunk = region.get(packed);
-            if (chunk == null || cancelled) return List.of();
+            if (chunk == null || !awaitResume()) return List.of();
             var content = new LinkedHashMap<Long, String>();
             if (persistent || cached != null) {
                 for (var snapshot : region.values()) {
-                    if (cancelled || Thread.currentThread().isInterrupted()) return List.of();
+                    if (!awaitResume()) return List.of();
                     content.put(snapshot.packed, snapshot.contentSignature());
                 }
                 for (long missing : missingChunks) content.put(missing, "missing");
@@ -1493,6 +1651,14 @@ public final class StructureFinder {
                 scanned.putAll(cached.scanned());
                 scannedAt.putAll(cached.scannedAt());
                 dismissed.addAll(cached.dismissed());
+            }
+            if (forceRescan) {
+                // Keep other types and original discovery/dismissal history. Only the
+                // currently requested types must bypass their completed-cache entries.
+                for (String type : types) {
+                    scanned.remove(type);
+                    scannedAt.remove(type);
+                }
             }
             Set<String> remaining = new LinkedHashSet<>(types);
             remaining.removeAll(scanned.keySet());
@@ -1524,6 +1690,7 @@ public final class StructureFinder {
             long sliceStart = System.nanoTime();
             for (int operations = 0; !cancelled && !Thread.currentThread().isInterrupted(); operations++) {
                 if ((operations & 31) == 0) {
+                    if (!awaitResume()) return;
                     fraction = chunkScanFraction(chunk.states.length, cursor.sectionIndex,
                             cursor.blockIndex, cursor.candidate != null);
                     long elapsed = System.nanoTime() - sliceStart;
@@ -1543,6 +1710,21 @@ public final class StructureFinder {
                     return;
                 }
             }
+        }
+
+        private boolean awaitResume() {
+            if (!paused) return !cancelled && !Thread.currentThread().isInterrupted();
+            synchronized (PAUSE_LOCK) {
+                while (paused && !cancelled && !Thread.currentThread().isInterrupted()) {
+                    try {
+                        PAUSE_LOCK.wait();
+                    } catch (InterruptedException exception) {
+                        Thread.currentThread().interrupt();
+                        return false;
+                    }
+                }
+            }
+            return !cancelled && !Thread.currentThread().isInterrupted();
         }
     }
 

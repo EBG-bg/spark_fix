@@ -1,5 +1,6 @@
 {
   "required": false,
+  "plugin": "dev.codex.spark_fix.mixin.client.PatchMonitorMixinPlugin",
   "package": "cn.reibridge.mixin",
   "compatibilityLevel": "JAVA_25",
   "client": [
